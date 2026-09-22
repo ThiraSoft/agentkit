@@ -222,6 +222,21 @@ agent, err := agentkit.New(ctx, agentkit.Config{
 `mcp` package can also be used alone: `mcp.Dial` for one server,
 `mcp.NewManager` for a list.
 
+## Command line
+
+`cmd/agentkit` is a small terminal client, handy to try a model or an MCP
+server:
+
+```sh
+go install github.com/ThiraSoft/agentkit/cmd/agentkit@latest
+agentkit -config agent.json
+agentkit -provider gemini -model gemini-2.5-flash
+```
+
+The answer streams on stdout, the tool calls on stderr. `/reset`, `/usage`,
+`/tools` and `/quit` do what they say; Ctrl-C cuts the answer under way.
+Each release on GitHub carries the binaries.
+
 ## Stability
 
 agentkit is v0: the API may change before v1. Changes are listed in the
