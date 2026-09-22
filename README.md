@@ -21,8 +21,8 @@ agentkit does:
 - MCP servers over stdio, SSE or streamable HTTP, whose tools sit next to
   your Go tools.
 
-agentkit does not do long-term memory, persistence of conversations,
-prompt templates or configuration files. It holds no global state and
+agentkit does not do long-term memory, persistence of conversations or
+prompt templates. It holds no global state and
 writes no file: keep `Conversation.Messages()` wherever you like and pass
 it back to `NewConversation`.
 
@@ -183,6 +183,25 @@ err = json.Unmarshal([]byte(turn.Text), &v)
 ```
 
 Not every model takes a response schema together with tools.
+
+## Configuration file
+
+`LoadConfig` reads a `Config` from JSON, everything but the Go tools:
+
+```json
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "apiKey": "${ANTHROPIC_API_KEY}",
+  "maxTokens": 8192,
+  "promptCache": true,
+  "mcp": [{"name": "files", "transport": "stdio", "command": "files-mcp --root /tmp"}]
+}
+```
+
+The other fields are `baseURL`, `maxSteps`, `maxToolResult`, `temperature`
+and `responseSchema`. `${VAR}` in `apiKey`, `baseURL` and the MCP servers
+is replaced by the environment variable; an unknown field is an error.
 
 ## MCP
 
