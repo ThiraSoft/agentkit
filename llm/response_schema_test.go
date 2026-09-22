@@ -47,5 +47,12 @@ func TestResponseSchemaReachesEveryProvider(t *testing.T) {
 				t.Errorf("%s sent %s without ResponseSchema", c.provider, k)
 			}
 		}
+		if gc, ok := b["generationConfig"].(map[string]any); ok {
+			for _, k := range []string{"responseMimeType", "responseJsonSchema"} {
+				if _, has := gc[k]; has {
+					t.Errorf("%s sent generationConfig.%s without ResponseSchema", c.provider, k)
+				}
+			}
+		}
 	}
 }
