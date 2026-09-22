@@ -106,7 +106,9 @@ start from `llm.NewOpenAICompat` and wrap it with `llm.WithRetry`.
 `Hooks` are all optional and run in the goroutine of `Send`:
 
 - `OnText(chunk)`: streamed text;
-- `OnToolCall(call)` and `OnToolResult(result)`: each tool call and its result;
+- `OnToolCall(call)` and `OnToolResult(result)`: each tool call and its
+  result, the results as the tools finish (the history keeps them in the
+  order of the calls);
 - `Approve(call) bool`: return false to refuse a call; the model is told;
 - `OnStepEnd()`: the model finished a message that asks for tools;
 - `OnFinish()`: the answer is complete; it may block (for instance while a

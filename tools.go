@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"unicode/utf8"
 
 	"github.com/ThiraSoft/agentkit/llm"
@@ -28,30 +27,41 @@ const interrupted = "interrupted"
 
 // runTools executes calls from the same message in parallel and returns
 // results in the order of the calls. OnToolCall and Approve are called
-// first, one call after another, in the Send goroutine.
+// first, one call after another, then OnToolResult as each result is known,
+// in the order they finish; all of them in the Send goroutine.
 func (a *Agent) runTools(ctx context.Context, calls []llm.ToolCall, h Hooks) []ToolResult {
 	results := make([]ToolResult, len(calls))
-	var wg sync.WaitGroup
+	done := make(chan int, len(calls))
+	report := func(i int, r ToolResult) {
+		results[i] = r
+		if h.OnToolResult != nil {
+			h.OnToolResult(r)
+		}
+	}
+	running := 0
 	for i, tc := range calls {
 		c := ToolCall{ID: tc.ID, Name: tc.Function.Name, Arguments: tc.Function.Arguments}
 		if ctx.Err() != nil {
-			results[i] = ToolResult{ID: c.ID, Name: c.Name, Content: interrupted, Err: ctx.Err().Error()}
+			report(i, ToolResult{ID: c.ID, Name: c.Name, Content: interrupted, Err: ctx.Err().Error()})
 			continue
 		}
 		if h.OnToolCall != nil {
 			h.OnToolCall(c)
 		}
 		if h.Approve != nil && !h.Approve(c) {
-			results[i] = ToolResult{ID: c.ID, Name: c.Name, Content: "declined by user", Err: "declined by user"}
+			report(i, ToolResult{ID: c.ID, Name: c.Name, Content: "declined by user", Err: "declined by user"})
 			continue
 		}
-		wg.Add(1)
+		running++
 		go func() {
-			defer wg.Done()
 			results[i] = a.runTool(ctx, c)
+			done <- i
 		}()
 	}
-	wg.Wait()
+	for ; running > 0; running-- {
+		i := <-done
+		report(i, results[i])
+	}
 	return results
 }
 

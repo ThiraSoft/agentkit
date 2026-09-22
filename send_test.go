@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -75,7 +76,7 @@ func TestToolsRunInParallelAndInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "step end,call slow,call fast,result slow,result fast"; strings.Join(events, ",") != want {
+	if want := "step end,call slow,call fast,result fast,result slow"; strings.Join(events, ",") != want {
 		t.Fatalf("events %v, want %s", events, want)
 	}
 	msgs := conv.Messages()
@@ -105,10 +106,14 @@ func TestToolResults(t *testing.T) {
 		{chunks: []string{"ok"}},
 	}}
 	conv := newTestAgent(t, f, Config{Tools: tools, MaxToolResult: 11}).NewConversation("s")
-	var results []ToolResult
+	// Results come as they finish: they are read by call.
+	results := make([]ToolResult, 4)
 	_, err := conv.Send(context.Background(), "x", Hooks{
-		Approve:      func(c ToolCall) bool { return c.Name != "forbidden" },
-		OnToolResult: func(r ToolResult) { results = append(results, r) },
+		Approve: func(c ToolCall) bool { return c.Name != "forbidden" },
+		OnToolResult: func(r ToolResult) {
+			i, _ := strconv.Atoi(r.ID)
+			results[i-1] = r
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

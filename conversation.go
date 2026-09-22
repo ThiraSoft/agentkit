@@ -183,9 +183,6 @@ func (c *Conversation) loop(ctx context.Context, h Hooks, start int) (Turn, erro
 		// complete by construction.
 		for _, r := range a.runTools(ctx, resp.ToolCalls, h) {
 			c.add(toolMessage(r))
-			if h.OnToolResult != nil {
-				h.OnToolResult(r)
-			}
 		}
 		if ctx.Err() != nil {
 			return c.end(ctx, h, start, turn, true, ctx.Err())
