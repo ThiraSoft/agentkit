@@ -104,4 +104,3 @@ func TestNewRejectsAResponseSchemaThatIsNotAnObject(t *testing.T) {
 		t.Fatal("ResponseSchema [] accepted")
 	}
 }
-

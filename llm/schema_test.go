@@ -86,3 +86,33 @@ func TestAnthropicAndGeminiSendTheRawSchema(t *testing.T) {
 		t.Fatalf("gemini parametersJsonSchema %v", ps)
 	}
 }
+
+func TestFunctionDefRoundTrip(t *testing.T) {
+	rich := Tool{Type: "function", Function: FunctionDef{Name: "f", Description: "d",
+		Schema: json.RawMessage(`{"type":"object","properties":{"n":{"type":"integer","default":10},"q":{"type":["string","null"]}}}`)}}
+	b, err := json.Marshal(rich)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Tool
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatalf("decoding %s: %v", b, err)
+	}
+	if back.Function.Name != "f" || back.Function.Description != "d" || string(back.Function.Schema) != string(rich.Function.Schema) {
+		t.Fatalf("back %+v, Schema %s", back.Function, back.Function.Schema)
+	}
+
+	plain := Tool{Type: "function", Function: FunctionDef{Name: "g", Parameters: ToolParams{
+		Type: "object", Properties: ToolProperties{"a": {Type: "string", Description: "x"}}, Required: []string{"a"}}}}
+	b, err = json.Marshal(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back = Tool{}
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Function.Parameters.Properties["a"].Description != "x" || len(back.Function.Parameters.Required) != 1 {
+		t.Fatalf("Parameters lost: %+v", back.Function.Parameters)
+	}
+}

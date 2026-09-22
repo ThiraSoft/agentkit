@@ -56,6 +56,7 @@ func TestLoadConfigRefuses(t *testing.T) {
 		"unknown field": `{"provider": "gemini", "modle": "x"}`,
 		"no provider":   `{"model": "x"}`,
 		"not JSON":      `{`,
+		"two objects":   `{"provider": "gemini"} {"provider": "openai"}`,
 	}
 	for name, content := range cases {
 		if _, err := LoadConfig(writeConfig(t, content)); err == nil || !strings.HasPrefix(err.Error(), "agentkit: ") {

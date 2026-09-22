@@ -59,6 +59,9 @@ func LoadConfig(path string) (Config, error) {
 	if err := dec.Decode(&f); err != nil {
 		return Config{}, fmt.Errorf("agentkit: %s: %w", path, err)
 	}
+	if dec.More() {
+		return Config{}, fmt.Errorf("agentkit: %s: more than one JSON value", path)
+	}
 	if f.Provider == "" {
 		return Config{}, fmt.Errorf("agentkit: %s: no provider", path)
 	}

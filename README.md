@@ -94,17 +94,19 @@ config take precedence over the environment variable and the default URL.
 | `mistral` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` |
 | `ollama` | none | `http://localhost:11434` |
 | `llamacpp` | none | `LLAMACPP_URL` (without `/v1`), or `http://localhost:8080`; if using `BaseURL`, include `/v1` (e.g. `http://localhost:8080/v1`) |
-| `openai-compat` | `Config.APIKey` | none: `BaseURL` is required, e.g. `http://localhost:8000/v1` |
+| `openai-compat` | `Config.APIKey` | none: `BaseURL` is required, e.g. `http://localhost:8000/v1` ; asks for usage with stream_options, which a strict server may refuse (then use llm.NewOpenAICompat) |
 
 Your own provider: implement `llm.Provider` and pass it as
 `Config.ProviderImpl`. For a server that speaks the OpenAI chat/completions
 format but needs its own settings (headers, extra body fields, timeout),
 start from `llm.NewOpenAICompat` and wrap it with `llm.WithRetry`.
 
-`Config.Temperature` and `Config.MaxTokens` go to every provider in its own
-terms (`max_completion_tokens` for OpenAI, `maxOutputTokens` for Gemini,
-`num_predict` for Ollama). Left unset, the provider's default holds;
-Anthropic, which requires a cap, gets 32000.
+`Config.Temperature` and `Config.MaxTokens` go to every provider built by name,
+in its own terms (`max_completion_tokens` for OpenAI, `maxOutputTokens` for
+Gemini, `num_predict` for Ollama). Left unset, the provider's default holds;
+Anthropic, which requires a cap, gets 32000. A provider given as ProviderImpl,
+or built with llm.NewOpenAICompat, takes these options itself (ExtraBody for
+the latter).
 
 `Config.PromptCache` marks the prompt for caching on Anthropic, which has to
 be told: the tools and the system prompt, and the conversation as it grows.
@@ -135,7 +137,8 @@ agentkit sends the whole history at every step. `KeepTurns(n)` and
 turns, or as many as fit in a token budget (a rough four bytes per token),
 always with the system prompt and the turn under way. They cut at a user
 message, so a tool call never loses its result, and the history itself
-stays whole.
+stays whole. With PromptCache, a sliding window changes the cached prefix at
+every turn: only the tools and the system prompt are read back from the cache.
 
 ## Tools
 
@@ -177,12 +180,14 @@ type verdict struct {
 
 schema, err := agentkit.SchemaFor[verdict]()
 agent, err := agentkit.New(ctx, agentkit.Config{Provider: "openai", Model: "gpt-5-mini", ResponseSchema: schema})
-turn, err := agent.NewConversation("Classify the message.").Send(ctx, text, agentkit.Hooks{})
+conv := agent.NewConversation("Classify the message.")
+_, err = conv.Send(ctx, text, agentkit.Hooks{})
+msgs := conv.Messages()
 var v verdict
-err = json.Unmarshal([]byte(turn.Text), &v)
+err = json.Unmarshal([]byte(msgs[len(msgs)-1].Content), &v)
 ```
 
-Not every model takes a response schema together with tools.
+Not every model takes a response schema together with tools. With tools, Turn.Text joins the text of every step; the answer is the last message.
 
 ## Configuration file
 
