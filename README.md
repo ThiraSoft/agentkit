@@ -106,6 +106,11 @@ terms (`max_completion_tokens` for OpenAI, `maxOutputTokens` for Gemini,
 `num_predict` for Ollama). Left unset, the provider's default holds;
 Anthropic, which requires a cap, gets 32000.
 
+`Config.PromptCache` marks the prompt for caching on Anthropic, which has to
+be told: the tools and the system prompt, and the conversation as it grows.
+OpenAI and Gemini cache on their own. Either way, `Turn.Usage` says how many
+prompt tokens came from the cache.
+
 ## Hooks
 
 `Hooks` are all optional and run in the goroutine of `Send`:

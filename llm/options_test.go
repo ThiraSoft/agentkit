@@ -34,8 +34,14 @@ func captured(t *testing.T) (*httptest.Server, func() map[string]any) {
 }
 
 // send streams one user message through a provider built from cfg, with
-// BaseURL pointing at srv, and returns the body the server received.
+// BaseURL pointing at a captured server, and returns the body it received.
 func send(t *testing.T, cfg Config) map[string]any {
+	t.Helper()
+	return sendWith(t, cfg, "")
+}
+
+// sendWith is send with a system prompt first, when system is not empty.
+func sendWith(t *testing.T, cfg Config, system string) map[string]any {
 	t.Helper()
 	srv, body := captured(t)
 	cfg.BaseURL = srv.URL
@@ -47,7 +53,12 @@ func send(t *testing.T, cfg Config) map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, func(string) error { return nil }); err != nil {
+	var msgs []Message
+	if system != "" {
+		msgs = append(msgs, Message{Role: "system", Content: system})
+	}
+	msgs = append(msgs, Message{Role: "user", Content: "hi"})
+	if _, err := p.Stream(context.Background(), msgs, nil, func(string) error { return nil }); err != nil {
 		t.Fatalf("%s: %v", cfg.Provider, err)
 	}
 	return body()

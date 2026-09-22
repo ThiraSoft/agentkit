@@ -23,6 +23,7 @@ type anthropicProvider struct {
 	client      *http.Client
 	maxTokens   int
 	temperature *float64
+	cache       bool
 }
 
 func newAnthropicProvider(cfg Config) *anthropicProvider {
@@ -38,6 +39,7 @@ func newAnthropicProvider(cfg Config) *anthropicProvider {
 		client:      &http.Client{Timeout: 300 * time.Second},
 		maxTokens:   maxTokens,
 		temperature: cfg.Temperature,
+		cache:       cfg.PromptCache,
 	}
 }
 
@@ -49,8 +51,22 @@ func (p *anthropicProvider) request(messages []Message, tools []Tool) map[string
 		"max_tokens": p.maxTokens,
 		"messages":   msgs,
 	}
-	if system != "" {
+	switch {
+	case system != "" && p.cache:
+		// A breakpoint after the system prompt caches the tools too, which
+		// come before it.
+		body["system"] = []map[string]any{{
+			"type":          "text",
+			"text":          system,
+			"cache_control": map[string]any{"type": "ephemeral"},
+		}}
+	case system != "":
 		body["system"] = system
+	}
+	if p.cache {
+		// Automatic caching: a breakpoint on the last block, which moves
+		// along as the conversation grows.
+		body["cache_control"] = map[string]any{"type": "ephemeral"}
 	}
 	if len(tools) > 0 {
 		body["tools"] = p.convertTools(tools)

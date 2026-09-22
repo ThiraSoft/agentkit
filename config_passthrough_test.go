@@ -53,3 +53,24 @@ func TestConfigReachesTheProvider(t *testing.T) {
 		t.Fatalf("body %v", b)
 	}
 }
+
+func TestPromptCacheReachesAnthropic(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n")
+	}))
+	defer srv.Close()
+	a, err := New(context.Background(), Config{Provider: "anthropic", Model: "m", APIKey: "k", BaseURL: srv.URL, PromptCache: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err := a.NewConversation("s").Send(context.Background(), "hi", Hooks{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := body["cache_control"]; !has {
+		t.Fatalf("body %v", body)
+	}
+}
+

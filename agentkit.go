@@ -19,7 +19,7 @@ const (
 
 // Config describes an agent. ProviderImpl, if non-nil, overrides
 // Provider, Model, BaseURL, APIKey and the provider options below
-// (Temperature, MaxTokens).
+// (Temperature, MaxTokens, PromptCache).
 type Config struct {
 	Provider string // "gemini", "openai-compat", "anthropic", "llamacpp"...
 	Model    string
@@ -32,6 +32,9 @@ type Config struct {
 	// MaxTokens caps the tokens of one model call; 0 leaves the provider's
 	// default.
 	MaxTokens int
+	// PromptCache asks the provider to cache the prompt where it has to be
+	// told (Anthropic); see Turn.Usage for what was read from the cache.
+	PromptCache bool
 
 	ProviderImpl llm.Provider
 
@@ -80,6 +83,7 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 			APIKey:      cfg.APIKey,
 			Temperature: cfg.Temperature,
 			MaxTokens:   cfg.MaxTokens,
+			PromptCache: cfg.PromptCache,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("agentkit: %w", err)
