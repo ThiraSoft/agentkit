@@ -128,6 +128,15 @@ prompt tokens came from the cache.
 - `OnInterrupt(written) kept`: choose what stays in the history when a turn
   is cut.
 
+## Context
+
+agentkit sends the whole history at every step. `KeepTurns(n)` and
+`KeepTokens(budget)` are ready-made `Prepare` hooks that send only the last
+turns, or as many as fit in a token budget (a rough four bytes per token),
+always with the system prompt and the turn under way. They cut at a user
+message, so a tool call never loses its result, and the history itself
+stays whole.
+
 ## Tools
 
 A `Tool` describes its arguments with `Parameters`, or with `Schema`, a raw
