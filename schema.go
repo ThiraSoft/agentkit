@@ -36,6 +36,9 @@ func NewTool[T any](name, description string, run func(ctx context.Context, args
 	if err != nil {
 		return Tool{}, fmt.Errorf("agentkit: tool %q: %w", name, err)
 	}
+	if err := objectSchema(schema); err != nil {
+		return Tool{}, fmt.Errorf("agentkit: tool %q: %w", name, err)
+	}
 	return Tool{
 		Name:        name,
 		Description: description,
@@ -52,8 +55,8 @@ func NewTool[T any](name, description string, run func(ctx context.Context, args
 	}, nil
 }
 
-// objectSchema checks that raw is a JSON object, the only kind of schema
-// a tool or an answer can have.
+// objectSchema checks that raw is a JSON object with type "object",
+// the only kind of schema a tool or an answer can have.
 func objectSchema(raw json.RawMessage) error {
 	var obj map[string]any
 	if err := json.Unmarshal(raw, &obj); err != nil {
@@ -61,6 +64,9 @@ func objectSchema(raw json.RawMessage) error {
 	}
 	if obj == nil {
 		return errors.New("schema is not a JSON object: null")
+	}
+	if tp, ok := obj["type"]; ok && tp != "object" {
+		return fmt.Errorf("schema type is %v, not \"object\"", tp)
 	}
 	return nil
 }

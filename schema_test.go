@@ -74,12 +74,20 @@ func TestSchemaReachesTheProvider(t *testing.T) {
 }
 
 func TestNewRejectsASchemaThatIsNotAnObject(t *testing.T) {
-	for _, s := range []string{`[1]`, `null`, `{`, `"x"`} {
+	for _, s := range []string{`[1]`, `null`, `{`, `"x"`, `{"type":"string"}`} {
 		tool := echoTool("x", func(context.Context, json.RawMessage) (string, error) { return "", nil })
 		tool.Schema = json.RawMessage(s)
 		if a, err := New(context.Background(), Config{ProviderImpl: &fakeProvider{}, Tools: []Tool{tool}}); err == nil {
 			a.Close()
 			t.Errorf("schema %s accepted", s)
 		}
+	}
+}
+
+func TestNewToolRejectsNonObject(t *testing.T) {
+	if _, err := NewTool("bad", "description", func(_ context.Context, _ int) (string, error) {
+		return "", nil
+	}); err == nil {
+		t.Fatal("expected error for NewTool[int]")
 	}
 }
