@@ -1,0 +1,159 @@
+# agentkit
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/ThiraSoft/agentkit.svg)](https://pkg.go.dev/github.com/ThiraSoft/agentkit)
+[![test](https://github.com/ThiraSoft/agentkit/actions/workflows/test.yml/badge.svg)](https://github.com/ThiraSoft/agentkit/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+An agent loop in Go, as a library: a model, Go tools and MCP servers. The
+`Agent` holds the provider and the tools; each `Conversation` holds its own
+history, and a `Send` runs the model and its tools until the final answer.
+
+## What it does, and what it leaves to you
+
+agentkit does:
+
+- the loop: model call, tool calls (in parallel), results back to the
+  model, until an answer without tool calls or `MaxSteps`;
+- streaming, interruption (a new `Send` cuts the running one) and hooks on
+  every step;
+- providers for the main APIs and any OpenAI-compatible server, with
+  retries on transient errors;
+- MCP servers over stdio, SSE or streamable HTTP, whose tools sit next to
+  your Go tools.
+
+agentkit does not do long-term memory, persistence of conversations,
+prompt templates or configuration files. It holds no global state and
+writes no file: keep `Conversation.Messages()` wherever you like and pass
+it back to `NewConversation`.
+
+## Install
+
+```sh
+go get github.com/ThiraSoft/agentkit
+```
+
+Requires Go 1.25 or later.
+
+## Example
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/ThiraSoft/agentkit"
+	"github.com/ThiraSoft/agentkit/llm"
+)
+
+func main() {
+	ctx := context.Background()
+
+	agent, err := agentkit.New(ctx, agentkit.Config{
+		Provider: "gemini",
+		Model:    "gemini-2.5-flash-lite", // key: GEMINI_API_KEY
+		Tools: []agentkit.Tool{{
+			Name:        "clock",
+			Description: "Tells the time.",
+			Parameters:  llm.ToolParams{Type: "object", Properties: llm.ToolProperties{}},
+			Run: func(ctx context.Context, args json.RawMessage) (string, error) {
+				return time.Now().Format("15:04"), nil
+			},
+		}},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer agent.Close()
+
+	conv := agent.NewConversation("Answer in one sentence.")
+	turn, err := conv.Send(ctx, "What time is it?", agentkit.Hooks{
+		OnText: func(chunk string) { fmt.Print(chunk) },
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("\n(%d step(s))\n", turn.Steps)
+}
+```
+
+## Providers
+
+Set `Config.Provider` and `Config.Model`. `APIKey` and `BaseURL` in the
+config take precedence over the environment variable and the default URL.
+
+| Provider | Key from | Default URL |
+|---|---|---|
+| `openai` | `OPENAI_API_KEY` | `https://api.openai.com/v1` |
+| `gemini` | `GEMINI_API_KEY` | `https://generativelanguage.googleapis.com/v1beta` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `https://api.anthropic.com/v1` |
+| `mistral` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` |
+| `ollama` | none | `http://localhost:11434` |
+| `llamacpp` | none | `LLAMACPP_URL` (without `/v1`), or `http://localhost:8080`; if using `BaseURL`, include `/v1` (e.g. `http://localhost:8080/v1`) |
+| `openai-compat` | `Config.APIKey` | none: `BaseURL` is required, e.g. `http://localhost:8000/v1` |
+
+Your own provider: implement `llm.Provider` and pass it as
+`Config.ProviderImpl`. For a server that speaks the OpenAI chat/completions
+format but needs its own settings (headers, extra body fields, timeout),
+start from `llm.NewOpenAICompat` and wrap it with `llm.WithRetry`.
+
+## Hooks
+
+`Hooks` are all optional and run in the goroutine of `Send`:
+
+- `OnText(chunk)`: streamed text;
+- `OnToolCall(call)` and `OnToolResult(result)`: each tool call and its result;
+- `Approve(call) bool`: return false to refuse a call; the model is told;
+- `OnStepEnd()`: the model finished a message that asks for tools;
+- `OnFinish()`: the answer is complete; it may block (for instance while a
+  voice finishes speaking);
+- `Prepare(msgs) msgs`: rewrite what is sent to the model at each step,
+  without touching the history;
+- `OnInterrupt(written) kept`: choose what stays in the history when a turn
+  is cut.
+
+## MCP
+
+```go
+agent, err := agentkit.New(ctx, agentkit.Config{
+	Provider: "openai-compat",
+	BaseURL:  "http://localhost:8080/v1",
+	Model:    "local",
+	MCP: []mcp.ServerConfig{
+		{Name: "files", Transport: "stdio", Command: "/usr/local/bin/files-mcp --root /tmp"},
+		{Name: "search", Transport: "streamable", URL: "https://mcp.example.com/mcp",
+			Headers: map[string]string{"Authorization": "Bearer ${SEARCH_TOKEN}"}},
+	},
+})
+```
+
+`New` fails if a server does not answer, or if two tools share a name. The
+`mcp` package can also be used alone: `mcp.Dial` for one server,
+`mcp.NewManager` for a list.
+
+## Stability
+
+agentkit is v0: the API may change before v1. Changes are listed in the
+release notes.
+
+## Tests
+
+```sh
+go test -race ./...
+```
+
+Integration tests talk to real models and are behind a build tag:
+
+```sh
+GEMINI_API_KEY=... go test -tags integration . -run TestGemini
+AGENTKIT_OPENAI_URL=http://localhost:8080/v1 AGENTKIT_OPENAI_MODEL=local \
+  go test -tags integration . -run TestOpenAICompat
+```
+
+## License
+
+MIT, see [LICENSE](LICENSE).

@@ -1,0 +1,139 @@
+// Package agentkit is an agent loop as a library: a provider, Go tools and
+// MCP servers, with no files and no global state. The Agent holds what is
+// costly; each Conversation holds its own history.
+package agentkit
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/ThiraSoft/agentkit/llm"
+	"github.com/ThiraSoft/agentkit/mcp"
+)
+
+const (
+	defaultMaxSteps      = 20
+	defaultMaxToolResult = 32 << 10
+)
+
+// Config describes an agent. ProviderImpl, if non-nil, overrides
+// Provider, Model, BaseURL and APIKey.
+type Config struct {
+	Provider string // "gemini", "openai-compat", "anthropic", "llamacpp"...
+	Model    string
+	BaseURL  string // full base URL of provider, e.g. https://generativelanguage.googleapis.com/v1beta for Gemini, http://host:port/v1 for an OpenAI-compatible server (empty = default)
+	APIKey   string // empty = provider environment variable
+
+	ProviderImpl llm.Provider
+
+	Tools []Tool
+	MCP   []mcp.ServerConfig
+
+	MaxSteps      int // model calls per Send, 20 by default
+	MaxToolResult int // bytes kept from a tool result, 32 KB by default
+}
+
+// Tool is a tool executed in the caller's process. Run must respect
+// ctx cancellation: cancellation waits for tools to finish.
+// A panic in Run crashes the process (the tool runs in a goroutine).
+type Tool struct {
+	Name        string
+	Description string
+	Parameters  llm.ToolParams
+	Run         func(ctx context.Context, args json.RawMessage) (string, error)
+}
+
+// Agent brings together a provider and tools. It holds no conversation state
+// and serves multiple Conversations concurrently.
+type Agent struct {
+	provider      llm.Provider
+	defs          []llm.Tool
+	local         map[string]Tool
+	remote        map[string]bool
+	manager       *mcp.Manager
+	maxSteps      int
+	maxToolResult int
+}
+
+// New builds the provider, connects MCP servers and validates tools.
+// It fails rather than falling back to something else.
+func New(ctx context.Context, cfg Config) (*Agent, error) {
+	provider := cfg.ProviderImpl
+	if provider == nil {
+		p, err := llm.NewProvider(llm.Config{
+			Provider: llm.ProviderType(cfg.Provider),
+			Model:    cfg.Model,
+			BaseURL:  cfg.BaseURL,
+			APIKey:   cfg.APIKey,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("agentkit: %w", err)
+		}
+		provider = p
+	}
+	a := &Agent{
+		provider:      provider,
+		local:         map[string]Tool{},
+		remote:        map[string]bool{},
+		maxSteps:      cfg.MaxSteps,
+		maxToolResult: cfg.MaxToolResult,
+	}
+	if a.maxSteps <= 0 {
+		a.maxSteps = defaultMaxSteps
+	}
+	if a.maxToolResult <= 0 {
+		a.maxToolResult = defaultMaxToolResult
+	}
+
+	for _, t := range cfg.Tools {
+		if t.Name == "" || t.Run == nil {
+			return nil, fmt.Errorf("agentkit: tool %q has no name or no Run func", t.Name)
+		}
+		if _, dup := a.local[t.Name]; dup {
+			return nil, fmt.Errorf("agentkit: tool %q is declared twice", t.Name)
+		}
+		a.local[t.Name] = t
+		a.defs = append(a.defs, llm.Tool{
+			Type:     "function",
+			Function: llm.FunctionDef{Name: t.Name, Description: t.Description, Parameters: t.Parameters},
+		})
+	}
+
+	if len(cfg.MCP) > 0 {
+		m := mcp.NewManager(cfg.MCP)
+		if err := m.Connect(ctx); err != nil {
+			m.Close()
+			return nil, fmt.Errorf("agentkit: %w", err)
+		}
+		for _, def := range m.GetToolDefinitions() {
+			name := def.Function.Name
+			if _, dup := a.local[name]; dup || a.remote[name] {
+				m.Close()
+				return nil, fmt.Errorf("agentkit: tool %q is declared twice", name)
+			}
+			a.remote[name] = true
+			a.defs = append(a.defs, def)
+		}
+		a.manager = m
+	}
+	return a, nil
+}
+
+// Tools returns the tool names seen by the model, in the order it sees
+// them: Go tools first, then MCP servers.
+func (a *Agent) Tools() []string {
+	names := make([]string, len(a.defs))
+	for i, d := range a.defs {
+		names[i] = d.Function.Name
+	}
+	return names
+}
+
+// Close disconnects MCP servers.
+func (a *Agent) Close() error {
+	if a.manager != nil {
+		return a.manager.Close()
+	}
+	return nil
+}
