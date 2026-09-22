@@ -118,6 +118,26 @@ start from `llm.NewOpenAICompat` and wrap it with `llm.WithRetry`.
 - `OnInterrupt(written) kept`: choose what stays in the history when a turn
   is cut.
 
+## Tools
+
+A `Tool` describes its arguments with `Parameters`, or with `Schema`, a raw
+JSON Schema that can say more (enums, nested objects, bounds). `NewTool`
+writes the schema from a Go type and decodes the arguments into it:
+
+```go
+type forecastArgs struct {
+	City string `json:"city" jsonschema:"the city to forecast"`
+	Days int    `json:"days,omitempty" jsonschema:"how many days, 1 by default"`
+}
+
+forecast, err := agentkit.NewTool("forecast", "Weather forecast for a city.",
+	func(ctx context.Context, args forecastArgs) (string, error) {
+		return lookup(ctx, args.City, args.Days)
+	})
+```
+
+A panic in a tool is recovered: the model is told the tool failed.
+
 ## MCP
 
 ```go

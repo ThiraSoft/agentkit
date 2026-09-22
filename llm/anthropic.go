@@ -310,7 +310,7 @@ func (p *anthropicProvider) convertTools(tools []Tool) []map[string]any {
 		result = append(result, map[string]any{
 			"name":         t.Function.Name,
 			"description":  t.Function.Description,
-			"input_schema": t.Function.Parameters,
+			"input_schema": t.Function.JSONSchema(),
 		})
 	}
 	return result

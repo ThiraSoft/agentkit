@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -108,5 +110,33 @@ func TestConvertMCPTool_WithExample(t *testing.T) {
 	}
 	if pathProp.Default != "." {
 		t.Fatalf("expected default '.', got '%s'", pathProp.Default)
+	}
+}
+
+func TestConvertMCPTool_KeepsTheFullSchema(t *testing.T) {
+	mcpTool := &gomcp.Tool{
+		Name:        "pick",
+		Description: "desc",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"mode": map[string]any{"type": "string", "enum": []any{"a", "b"}},
+			},
+		},
+	}
+	tool := convertMCPTool(mcpTool)
+	if !strings.Contains(string(tool.Function.Schema), `"enum":["a","b"]`) {
+		t.Fatalf("Schema %s", tool.Function.Schema)
+	}
+	if !json.Valid(tool.Function.Schema) {
+		t.Fatalf("Schema is not JSON: %s", tool.Function.Schema)
+	}
+	if tool.Function.Parameters.Properties["mode"].Type != "string" {
+		t.Fatalf("Parameters no longer filled: %+v", tool.Function.Parameters)
+	}
+
+	empty := convertMCPTool(&gomcp.Tool{Name: "none"})
+	if empty.Function.Schema != nil {
+		t.Fatalf("a tool without InputSchema got Schema %s", empty.Function.Schema)
 	}
 }

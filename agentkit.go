@@ -41,7 +41,11 @@ type Tool struct {
 	Name        string
 	Description string
 	Parameters  llm.ToolParams
-	Run         func(ctx context.Context, args json.RawMessage) (string, error)
+	// Schema is a JSON Schema of the arguments, an object. When set, it
+	// replaces Parameters, and can say what Parameters cannot: enums,
+	// nested objects, bounds. NewTool writes it from a Go type.
+	Schema json.RawMessage
+	Run    func(ctx context.Context, args json.RawMessage) (string, error)
 }
 
 // Agent brings together a provider and tools. It holds no conversation state
@@ -93,10 +97,20 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 		if _, dup := a.local[t.Name]; dup {
 			return nil, fmt.Errorf("agentkit: tool %q is declared twice", t.Name)
 		}
+		if len(t.Schema) > 0 {
+			if err := objectSchema(t.Schema); err != nil {
+				return nil, fmt.Errorf("agentkit: tool %q: %w", t.Name, err)
+			}
+		}
 		a.local[t.Name] = t
 		a.defs = append(a.defs, llm.Tool{
-			Type:     "function",
-			Function: llm.FunctionDef{Name: t.Name, Description: t.Description, Parameters: t.Parameters},
+			Type: "function",
+			Function: llm.FunctionDef{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+				Schema:      t.Schema,
+			},
 		})
 	}
 

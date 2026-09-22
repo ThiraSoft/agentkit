@@ -84,11 +84,33 @@ type ToolArg struct {
 	Items       any    `json:"items,omitempty"` // for arrays
 }
 
-// FunctionDef defines the name, description and parameters of a tool function.
+// FunctionDef defines the name, description and parameters of a tool
+// function. Schema, when set, is a raw JSON Schema of the arguments that
+// replaces Parameters for every provider.
 type FunctionDef struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Parameters  ToolParams `json:"parameters"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  ToolParams      `json:"parameters"`
+	Schema      json.RawMessage `json:"-"`
+}
+
+// JSONSchema returns the schema of the arguments: Schema when set,
+// Parameters encoded otherwise.
+func (d FunctionDef) JSONSchema() json.RawMessage {
+	if len(d.Schema) > 0 {
+		return d.Schema
+	}
+	b, _ := json.Marshal(d.Parameters) // a ToolParams always encodes
+	return b
+}
+
+// MarshalJSON writes JSONSchema under "parameters", the OpenAI shape.
+func (d FunctionDef) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Parameters  json.RawMessage `json:"parameters"`
+	}{d.Name, d.Description, d.JSONSchema()})
 }
 
 // Provider is the interface for all LLMs.

@@ -320,15 +320,30 @@ func (p *geminiProvider) convertResponse(content struct {
 func (p *geminiProvider) convertTools(tools []Tool) []map[string]any {
 	var defs []map[string]any
 	for _, t := range tools {
-		// Sanitize parameters to ensure Gemini compatibility
-		params := p.sanitizeParameters(t.Function.Parameters)
-		defs = append(defs, map[string]any{
+		def := map[string]any{
 			"name":        t.Function.Name,
 			"description": t.Function.Description,
-			"parameters":  params,
-		})
+		}
+		if len(t.Function.Schema) > 0 {
+			def["parametersJsonSchema"] = withoutMetaSchema(t.Function.Schema)
+		} else {
+			// Sanitize parameters to ensure Gemini compatibility
+			def["parameters"] = p.sanitizeParameters(t.Function.Parameters)
+		}
+		defs = append(defs, def)
 	}
 	return defs
+}
+
+// withoutMetaSchema drops the top-level "$schema" key of a JSON Schema,
+// which Gemini does not take.
+func withoutMetaSchema(schema json.RawMessage) any {
+	var m map[string]any
+	if err := json.Unmarshal(schema, &m); err != nil {
+		return schema
+	}
+	delete(m, "$schema")
+	return m
 }
 
 // sanitizeParameters ensures the tool parameters are valid for Gemini's JSON Schema requirements.
