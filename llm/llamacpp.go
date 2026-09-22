@@ -18,11 +18,13 @@ func llamaCppBaseURL() string {
 	return "http://localhost:8080"
 }
 
-func newLlamaCppProvider(model string) *openaiCompatProvider {
+func newLlamaCppProvider(cfg Config) *openaiCompatProvider {
 	return newOpenAICompatProvider(OpenAICompatConfig{
-		BaseURL: llamaCppBaseURL() + "/v1",
-		Model:   model,
-		Name:    "llamacpp",
+		APIKey:    cfg.APIKey,
+		BaseURL:   or(cfg.BaseURL, llamaCppBaseURL()+"/v1"),
+		Model:     cfg.Model,
+		Name:      "llamacpp",
+		ExtraBody: requestFields(cfg, "max_tokens", nil),
 		// llama-server (mtmd) follows the OpenAI convention: input_audio block.
 		AudioFormat: "input_audio",
 	})

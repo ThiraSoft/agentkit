@@ -17,19 +17,63 @@ import (
 )
 
 type geminiProvider struct {
-	baseURL string
-	apiKey  string
-	Model   string
-	client  *http.Client
+	baseURL     string
+	apiKey      string
+	Model       string
+	client      *http.Client
+	temperature *float64
+	maxTokens   int
 }
 
-func newGeminiProvider(model string) *geminiProvider {
+func newGeminiProvider(cfg Config) *geminiProvider {
 	return &geminiProvider{
-		baseURL: "https://generativelanguage.googleapis.com/v1beta",
-		apiKey:  os.Getenv("GEMINI_API_KEY"),
-		Model:   model,
-		client:  &http.Client{Timeout: 120 * time.Second},
+		baseURL:     or(cfg.BaseURL, "https://generativelanguage.googleapis.com/v1beta"),
+		apiKey:      or(cfg.APIKey, os.Getenv("GEMINI_API_KEY")),
+		Model:       cfg.Model,
+		client:      &http.Client{Timeout: 120 * time.Second},
+		temperature: cfg.Temperature,
+		maxTokens:   cfg.MaxTokens,
 	}
+}
+
+// generationConfig is the generationConfig of a request, nil when there
+// is nothing to set.
+func (p *geminiProvider) generationConfig() map[string]any {
+	gc := map[string]any{}
+	if p.temperature != nil {
+		gc["temperature"] = *p.temperature
+	}
+	if p.maxTokens > 0 {
+		gc["maxOutputTokens"] = p.maxTokens
+	}
+	if len(gc) == 0 {
+		return nil
+	}
+	return gc
+}
+
+// request is the body of a generateContent request.
+func (p *geminiProvider) request(messages []Message, tools []Tool) map[string]any {
+	systemPrompt, contents := p.convertMessages(messages)
+	body := map[string]any{
+		"contents": contents,
+	}
+	if systemPrompt != "" {
+		body["systemInstruction"] = map[string]any{
+			"parts": []map[string]any{
+				{"text": systemPrompt},
+			},
+		}
+	}
+	if len(tools) > 0 {
+		body["tools"] = []map[string]any{
+			{"function_declarations": p.convertTools(tools)},
+		}
+	}
+	if gc := p.generationConfig(); gc != nil {
+		body["generationConfig"] = gc
+	}
+	return body
 }
 
 func (p *geminiProvider) ModelName() string { return p.Model }
@@ -37,25 +81,7 @@ func (p *geminiProvider) ModelName() string { return p.Model }
 func (p *geminiProvider) Name() string { return "gemini" }
 
 func (p *geminiProvider) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
-	systemPrompt, contents := p.convertMessages(messages)
-
-	reqBody := map[string]any{
-		"contents": contents,
-	}
-
-	if systemPrompt != "" {
-		reqBody["systemInstruction"] = map[string]any{
-			"parts": []map[string]any{
-				{"text": systemPrompt},
-			},
-		}
-	}
-
-	if len(tools) > 0 {
-		reqBody["tools"] = []map[string]any{
-			{"function_declarations": p.convertTools(tools)},
-		}
-	}
+	reqBody := p.request(messages, tools)
 
 	url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", p.baseURL, p.Model, p.apiKey)
 	body, _ := json.Marshal(reqBody)
@@ -95,25 +121,7 @@ func (p *geminiProvider) Chat(ctx context.Context, messages []Message, tools []T
 
 // Stream implements the Provider interface
 func (p *geminiProvider) Stream(ctx context.Context, messages []Message, tools []Tool, onChunk func(string) error) (*Message, error) {
-	systemPrompt, contents := p.convertMessages(messages)
-
-	reqBody := map[string]any{
-		"contents": contents,
-	}
-
-	if systemPrompt != "" {
-		reqBody["systemInstruction"] = map[string]any{
-			"parts": []map[string]any{
-				{"text": systemPrompt},
-			},
-		}
-	}
-
-	if len(tools) > 0 {
-		reqBody["tools"] = []map[string]any{
-			{"function_declarations": p.convertTools(tools)},
-		}
-	}
+	reqBody := p.request(messages, tools)
 
 	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?key=%s&alt=sse", p.baseURL, p.Model, p.apiKey)
 

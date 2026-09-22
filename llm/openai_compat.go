@@ -295,20 +295,26 @@ func sanitizeMessages(messages []Message) []Message {
 	return out
 }
 
-func (p *openaiCompatProvider) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
-	reqBody := map[string]any{
+// request is the body of a chat/completions request, without "stream".
+func (p *openaiCompatProvider) request(messages []Message, tools []Tool) map[string]any {
+	body := map[string]any{
 		"model":    p.model,
 		"messages": toOpenAIMessages(messages, p.audioFormat),
 	}
 	if len(tools) > 0 {
-		reqBody["tools"] = tools
+		body["tools"] = tools
 	}
 	for k, v := range p.extraBody {
 		if k == "tool_choice" && len(tools) == 0 {
 			continue
 		}
-		reqBody[k] = v
+		body[k] = v
 	}
+	return body
+}
+
+func (p *openaiCompatProvider) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
+	reqBody := p.request(messages, tools)
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -354,20 +360,8 @@ func (p *openaiCompatProvider) Chat(ctx context.Context, messages []Message, too
 }
 
 func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, tools []Tool, onChunk func(string) error) (*Message, error) {
-	reqBody := map[string]any{
-		"model":    p.model,
-		"messages": toOpenAIMessages(messages, p.audioFormat),
-		"stream":   true,
-	}
-	if len(tools) > 0 {
-		reqBody["tools"] = tools
-	}
-	for k, v := range p.extraBody {
-		if k == "tool_choice" && len(tools) == 0 {
-			continue
-		}
-		reqBody[k] = v
-	}
+	reqBody := p.request(messages, tools)
+	reqBody["stream"] = true
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {

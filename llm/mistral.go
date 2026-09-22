@@ -4,14 +4,12 @@ package llm
 
 import "os"
 
-func newMistralProvider(model string) *openaiCompatProvider {
+func newMistralProvider(cfg Config) *openaiCompatProvider {
 	return newOpenAICompatProvider(OpenAICompatConfig{
-		APIKey:  os.Getenv("MISTRAL_API_KEY"),
-		BaseURL: "https://api.mistral.ai/v1",
-		Model:   model,
-		Name:    "mistral",
-		ExtraBody: map[string]any{
-			"tool_choice": "auto",
-		},
+		APIKey:    or(cfg.APIKey, os.Getenv("MISTRAL_API_KEY")),
+		BaseURL:   or(cfg.BaseURL, "https://api.mistral.ai/v1"),
+		Model:     cfg.Model,
+		Name:      "mistral",
+		ExtraBody: requestFields(cfg, "max_tokens", map[string]any{"tool_choice": "auto"}),
 	})
 }

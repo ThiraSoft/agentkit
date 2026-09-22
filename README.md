@@ -101,6 +101,11 @@ Your own provider: implement `llm.Provider` and pass it as
 format but needs its own settings (headers, extra body fields, timeout),
 start from `llm.NewOpenAICompat` and wrap it with `llm.WithRetry`.
 
+`Config.Temperature` and `Config.MaxTokens` go to every provider in its own
+terms (`max_completion_tokens` for OpenAI, `maxOutputTokens` for Gemini,
+`num_predict` for Ollama). Left unset, the provider's default holds;
+Anthropic, which requires a cap, gets 32000.
+
 ## Hooks
 
 `Hooks` are all optional and run in the goroutine of `Send`:

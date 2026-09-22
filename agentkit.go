@@ -18,12 +18,20 @@ const (
 )
 
 // Config describes an agent. ProviderImpl, if non-nil, overrides
-// Provider, Model, BaseURL and APIKey.
+// Provider, Model, BaseURL, APIKey and the provider options below
+// (Temperature, MaxTokens).
 type Config struct {
 	Provider string // "gemini", "openai-compat", "anthropic", "llamacpp"...
 	Model    string
 	BaseURL  string // full base URL of provider, e.g. https://generativelanguage.googleapis.com/v1beta for Gemini, http://host:port/v1 for an OpenAI-compatible server (empty = default)
 	APIKey   string // empty = provider environment variable
+
+	// Temperature, when set, is the sampling temperature. Recent Anthropic
+	// models refuse it.
+	Temperature *float64
+	// MaxTokens caps the tokens of one model call; 0 leaves the provider's
+	// default.
+	MaxTokens int
 
 	ProviderImpl llm.Provider
 
@@ -66,10 +74,12 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 	provider := cfg.ProviderImpl
 	if provider == nil {
 		p, err := llm.NewProvider(llm.Config{
-			Provider: llm.ProviderType(cfg.Provider),
-			Model:    cfg.Model,
-			BaseURL:  cfg.BaseURL,
-			APIKey:   cfg.APIKey,
+			Provider:    llm.ProviderType(cfg.Provider),
+			Model:       cfg.Model,
+			BaseURL:     cfg.BaseURL,
+			APIKey:      cfg.APIKey,
+			Temperature: cfg.Temperature,
+			MaxTokens:   cfg.MaxTokens,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("agentkit: %w", err)

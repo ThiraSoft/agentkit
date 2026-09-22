@@ -16,21 +16,49 @@ import (
 )
 
 type anthropicProvider struct {
-	apiKey  string
-	baseURL string
-	Model   string
-	version string
-	client  *http.Client
+	apiKey      string
+	baseURL     string
+	Model       string
+	version     string
+	client      *http.Client
+	maxTokens   int
+	temperature *float64
 }
 
-func newAnthropicProvider(model string) *anthropicProvider {
-	return &anthropicProvider{
-		apiKey:  os.Getenv("ANTHROPIC_API_KEY"),
-		baseURL: "https://api.anthropic.com/v1",
-		Model:   model,
-		version: "2023-06-01",
-		client:  &http.Client{Timeout: 300 * time.Second},
+func newAnthropicProvider(cfg Config) *anthropicProvider {
+	maxTokens := cfg.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 32000
 	}
+	return &anthropicProvider{
+		apiKey:      or(cfg.APIKey, os.Getenv("ANTHROPIC_API_KEY")),
+		baseURL:     or(cfg.BaseURL, "https://api.anthropic.com/v1"),
+		Model:       cfg.Model,
+		version:     "2023-06-01",
+		client:      &http.Client{Timeout: 300 * time.Second},
+		maxTokens:   maxTokens,
+		temperature: cfg.Temperature,
+	}
+}
+
+// request is the body of a Messages API request, without "stream".
+func (p *anthropicProvider) request(messages []Message, tools []Tool) map[string]any {
+	system, msgs := p.normalizeMessages(messages)
+	body := map[string]any{
+		"model":      p.Model,
+		"max_tokens": p.maxTokens,
+		"messages":   msgs,
+	}
+	if system != "" {
+		body["system"] = system
+	}
+	if len(tools) > 0 {
+		body["tools"] = p.convertTools(tools)
+	}
+	if p.temperature != nil {
+		body["temperature"] = *p.temperature
+	}
+	return body
 }
 
 func (p *anthropicProvider) ModelName() string { return p.Model }
@@ -38,22 +66,7 @@ func (p *anthropicProvider) ModelName() string { return p.Model }
 func (p *anthropicProvider) Name() string { return "anthropic" }
 
 func (p *anthropicProvider) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
-	// Normalize for Anthropic
-	system, msgs := p.normalizeMessages(messages)
-
-	reqBody := map[string]any{
-		"model":      p.Model,
-		"max_tokens": 32000,
-		"messages":   msgs,
-	}
-
-	if system != "" {
-		reqBody["system"] = system
-	}
-
-	if len(tools) > 0 {
-		reqBody["tools"] = p.convertTools(tools)
-	}
+	reqBody := p.request(messages, tools)
 
 	body, _ := json.Marshal(reqBody)
 	req, _ := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/messages", bytes.NewReader(body))
@@ -91,22 +104,8 @@ func (p *anthropicProvider) Chat(ctx context.Context, messages []Message, tools 
 }
 
 func (p *anthropicProvider) Stream(ctx context.Context, messages []Message, tools []Tool, onChunk func(string) error) (*Message, error) {
-	system, msgs := p.normalizeMessages(messages)
-
-	reqBody := map[string]any{
-		"model":      p.Model,
-		"max_tokens": 32000,
-		"messages":   msgs,
-		"stream":     true,
-	}
-
-	if system != "" {
-		reqBody["system"] = system
-	}
-
-	if len(tools) > 0 {
-		reqBody["tools"] = p.convertTools(tools)
-	}
+	reqBody := p.request(messages, tools)
+	reqBody["stream"] = true
 
 	body, _ := json.Marshal(reqBody)
 	req, _ := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/messages", bytes.NewReader(body))

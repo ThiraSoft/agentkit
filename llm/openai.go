@@ -4,11 +4,12 @@ package llm
 
 import "os"
 
-func newOpenAIProvider(model string) *openaiCompatProvider {
+func newOpenAIProvider(cfg Config) *openaiCompatProvider {
 	return newOpenAICompatProvider(OpenAICompatConfig{
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		BaseURL: "https://api.openai.com/v1",
-		Model:   model,
-		Name:    "openai",
+		APIKey:    or(cfg.APIKey, os.Getenv("OPENAI_API_KEY")),
+		BaseURL:   or(cfg.BaseURL, "https://api.openai.com/v1"),
+		Model:     cfg.Model,
+		Name:      "openai",
+		ExtraBody: requestFields(cfg, "max_completion_tokens", nil),
 	})
 }
