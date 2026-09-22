@@ -143,6 +143,13 @@ forecast, err := agentkit.NewTool("forecast", "Weather forecast for a city.",
 
 A panic in a tool is recovered: the model is told the tool failed.
 
+## Usage
+
+`Turn.Usage` sums the tokens of the model calls of a `Send`: `InputTokens`
+(the whole prompt, cache included), `OutputTokens`, `CacheReadTokens` and
+`CacheWriteTokens`, as far as the provider reports them. Each message a
+provider returns carries its own in `llm.Message.Usage`.
+
 ## MCP
 
 ```go

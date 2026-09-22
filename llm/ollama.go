@@ -161,14 +161,18 @@ func (p *ollamaProvider) Chat(ctx context.Context, messages []Message, tools []T
 	}
 
 	var result struct {
-		Message Message `json:"message"`
+		Message         Message `json:"message"`
+		PromptEvalCount int     `json:"prompt_eval_count"`
+		EvalCount       int     `json:"eval_count"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
-	return &result.Message, nil
+	msg := &result.Message
+	msg.Usage = &Usage{InputTokens: result.PromptEvalCount, OutputTokens: result.EvalCount}
+	return msg, nil
 }
 
 func (p *ollamaProvider) Stream(ctx context.Context, messages []Message, tools []Tool, onChunk func(string) error) (*Message, error) {
@@ -217,7 +221,9 @@ func (p *ollamaProvider) Stream(ctx context.Context, messages []Message, tools [
 				Content   string     `json:"content"`
 				ToolCalls []ToolCall `json:"tool_calls"`
 			} `json:"message"`
-			Done bool `json:"done"`
+			Done            bool `json:"done"`
+			PromptEvalCount int  `json:"prompt_eval_count"`
+			EvalCount       int  `json:"eval_count"`
 		}
 
 		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
@@ -238,6 +244,7 @@ func (p *ollamaProvider) Stream(ctx context.Context, messages []Message, tools [
 		}
 
 		if chunk.Done {
+			fullMessage.Usage = &Usage{InputTokens: chunk.PromptEvalCount, OutputTokens: chunk.EvalCount}
 			break
 		}
 	}

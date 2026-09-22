@@ -49,6 +49,7 @@ type Turn struct {
 	Text        string // assistant text of the turn, joined by double newlines
 	Steps       int    // model calls
 	Interrupted bool
+	Usage       llm.Usage // summed over the model calls of the turn
 }
 
 // Conversation holds history, including the system prompt, and has only
@@ -155,6 +156,9 @@ func (c *Conversation) loop(ctx context.Context, h Hooks, start int) (Turn, erro
 			}
 			return nil
 		})
+		if resp != nil && resp.Usage != nil {
+			turn.Usage = turn.Usage.Add(*resp.Usage)
+		}
 		if err != nil {
 			// Calls from an incomplete response are unreliable: only text
 			// is kept.

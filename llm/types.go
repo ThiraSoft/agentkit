@@ -29,6 +29,10 @@ type (
 		Name      string     `json:"name,omitempty"`         // tool name for responses
 
 		Media []Media `json:"media,omitempty"` // for messages containing media
+
+		// Usage is set by a provider on the message it returns; nil when
+		// the provider does not report it. It is not part of the JSON.
+		Usage *Usage `json:"-"`
 	}
 )
 
@@ -136,3 +140,24 @@ type Config struct {
 	// provider's default (32000 for Anthropic, which requires a value).
 	MaxTokens int
 }
+
+// Usage counts the tokens of one model call as the provider reports them;
+// a count the provider does not report stays zero. InputTokens counts the
+// whole prompt, the part read from or written to a cache included.
+type Usage struct {
+	InputTokens      int
+	OutputTokens     int
+	CacheReadTokens  int // prompt tokens read from the provider's cache
+	CacheWriteTokens int // prompt tokens written to it (Anthropic)
+}
+
+// Add returns u plus v, count by count.
+func (u Usage) Add(v Usage) Usage {
+	return Usage{
+		InputTokens:      u.InputTokens + v.InputTokens,
+		OutputTokens:     u.OutputTokens + v.OutputTokens,
+		CacheReadTokens:  u.CacheReadTokens + v.CacheReadTokens,
+		CacheWriteTokens: u.CacheWriteTokens + v.CacheWriteTokens,
+	}
+}
+

@@ -80,6 +80,26 @@ func (p *geminiProvider) ModelName() string { return p.Model }
 
 func (p *geminiProvider) Name() string { return "gemini" }
 
+// geminiUsage is the usageMetadata of a Gemini answer; in a stream each
+// chunk carries the counts so far.
+type geminiUsage struct {
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount"`
+}
+
+func (u *geminiUsage) usage() *Usage {
+	if u == nil {
+		return nil
+	}
+	return &Usage{
+		InputTokens:     u.PromptTokenCount,
+		OutputTokens:    u.CandidatesTokenCount + u.ThoughtsTokenCount,
+		CacheReadTokens: u.CachedContentTokenCount,
+	}
+}
+
 func (p *geminiProvider) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
 	reqBody := p.request(messages, tools)
 
@@ -106,6 +126,7 @@ func (p *geminiProvider) Chat(ctx context.Context, messages []Message, tools []T
 				Role  string           `json:"role"`
 			} `json:"content"`
 		} `json:"candidates"`
+		UsageMetadata *geminiUsage `json:"usageMetadata"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -116,7 +137,9 @@ func (p *geminiProvider) Chat(ctx context.Context, messages []Message, tools []T
 		return nil, fmt.Errorf("no response")
 	}
 
-	return p.convertResponse(result.Candidates[0].Content), nil
+	msg := p.convertResponse(result.Candidates[0].Content)
+	msg.Usage = result.UsageMetadata.usage()
+	return msg, nil
 }
 
 // Stream implements the Provider interface
@@ -178,10 +201,15 @@ func (p *geminiProvider) Stream(ctx context.Context, messages []Message, tools [
 					Role  string           `json:"role"`
 				} `json:"content"`
 			} `json:"candidates"`
+			UsageMetadata *geminiUsage `json:"usageMetadata"`
 		}
 
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+
+		if chunk.UsageMetadata != nil {
+			fullMessage.Usage = chunk.UsageMetadata.usage()
 		}
 
 		if len(chunk.Candidates) > 0 {

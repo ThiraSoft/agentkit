@@ -11,7 +11,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -26,6 +28,7 @@ type openaiCompatProvider struct {
 	extraBody    map[string]any    // Additional fields in the body (tool_choice, etc.)
 	extraHeaders map[string]string // Extra HTTP headers applied to every request
 	audioFormat  string            // "audio_url" (vLLM/Gemma) or "input_audio" (OpenAI/llama.cpp)
+	streamUsage  bool
 }
 
 // OpenAICompatConfig describes an OpenAI-compatible chat/completions
@@ -45,6 +48,9 @@ type OpenAICompatConfig struct {
 	// (OpenAI convention, expected by llama.cpp) or "audio_url" (vLLM/Gemma
 	// recipes). Empty defaults to "audio_url".
 	AudioFormat string
+	// StreamUsage asks for the token usage at the end of a stream
+	// (stream_options.include_usage). Some servers refuse the field.
+	StreamUsage bool
 }
 
 // NewOpenAICompat returns a provider for an OpenAI-compatible endpoint. It
@@ -69,6 +75,27 @@ func newOpenAICompatProvider(cfg OpenAICompatConfig) *openaiCompatProvider {
 		extraBody:    cfg.ExtraBody,
 		extraHeaders: cfg.ExtraHeaders,
 		audioFormat:  cfg.AudioFormat,
+		streamUsage:  cfg.StreamUsage,
+	}
+}
+
+// openaiUsage is the usage object of chat/completions.
+type openaiUsage struct {
+	PromptTokens        int `json:"prompt_tokens"`
+	CompletionTokens    int `json:"completion_tokens"`
+	PromptTokensDetails struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
+}
+
+func (u *openaiUsage) usage() *Usage {
+	if u == nil {
+		return nil
+	}
+	return &Usage{
+		InputTokens:     u.PromptTokens,
+		OutputTokens:    u.CompletionTokens,
+		CacheReadTokens: u.PromptTokensDetails.CachedTokens,
 	}
 }
 
@@ -346,6 +373,7 @@ func (p *openaiCompatProvider) Chat(ctx context.Context, messages []Message, too
 		Choices []struct {
 			Message Message `json:"message"`
 		} `json:"choices"`
+		Usage *openaiUsage `json:"usage"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -356,12 +384,17 @@ func (p *openaiCompatProvider) Chat(ctx context.Context, messages []Message, too
 		return nil, fmt.Errorf("%s: no response", p.name)
 	}
 
-	return &result.Choices[0].Message, nil
+	msg := &result.Choices[0].Message
+	msg.Usage = result.Usage.usage()
+	return msg, nil
 }
 
 func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, tools []Tool, onChunk func(string) error) (*Message, error) {
 	reqBody := p.request(messages, tools)
 	reqBody["stream"] = true
+	if p.streamUsage {
+		reqBody["stream_options"] = map[string]any{"include_usage": true}
+	}
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -432,12 +465,16 @@ func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, t
 					} `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
+			Usage *openaiUsage `json:"usage"`
 		}
 
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
 
+		if chunk.Usage != nil {
+			fullMessage.Usage = chunk.Usage.usage()
+		}
 		if len(chunk.Choices) == 0 {
 			continue
 		}
@@ -471,8 +508,9 @@ func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, t
 		}
 	}
 
-	for _, tc := range toolCallsMap {
-		fullMessage.ToolCalls = append(fullMessage.ToolCalls, *tc)
+	// In the order of their index, not the random order of the map.
+	for _, i := range slices.Sorted(maps.Keys(toolCallsMap)) {
+		fullMessage.ToolCalls = append(fullMessage.ToolCalls, *toolCallsMap[i])
 	}
 
 	return fullMessage, nil

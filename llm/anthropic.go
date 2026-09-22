@@ -65,6 +65,37 @@ func (p *anthropicProvider) ModelName() string { return p.Model }
 
 func (p *anthropicProvider) Name() string { return "anthropic" }
 
+// anthropicUsage is the usage object of the Messages API, where
+// input_tokens leaves out what was read from or written to the cache.
+type anthropicUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+}
+
+func (u anthropicUsage) usage() *Usage {
+	return &Usage{
+		InputTokens:      u.InputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens,
+		OutputTokens:     u.OutputTokens,
+		CacheReadTokens:  u.CacheReadInputTokens,
+		CacheWriteTokens: u.CacheCreationInputTokens,
+	}
+}
+
+// anthropicResponse is the body of a Messages API answer.
+type anthropicResponse struct {
+	Content []struct {
+		Type  string         `json:"type"`
+		Text  string         `json:"text,omitempty"`
+		ID    string         `json:"id,omitempty"`
+		Name  string         `json:"name,omitempty"`
+		Input map[string]any `json:"input,omitempty"`
+	} `json:"content"`
+	StopReason string         `json:"stop_reason"`
+	Usage      anthropicUsage `json:"usage"`
+}
+
 func (p *anthropicProvider) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
 	reqBody := p.request(messages, tools)
 
@@ -85,22 +116,15 @@ func (p *anthropicProvider) Chat(ctx context.Context, messages []Message, tools 
 		return nil, fmt.Errorf("anthropic error %d: %s", resp.StatusCode, body)
 	}
 
-	var result struct {
-		Content []struct {
-			Type  string         `json:"type"`
-			Text  string         `json:"text,omitempty"`
-			ID    string         `json:"id,omitempty"`
-			Name  string         `json:"name,omitempty"`
-			Input map[string]any `json:"input,omitempty"`
-		} `json:"content"`
-		StopReason string `json:"stop_reason"`
-	}
+	var result anthropicResponse
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
-	return p.convertResponse(result), nil
+	msg := p.convertResponse(result)
+	msg.Usage = result.Usage.usage()
+	return msg, nil
 }
 
 func (p *anthropicProvider) Stream(ctx context.Context, messages []Message, tools []Tool, onChunk func(string) error) (*Message, error) {
@@ -172,6 +196,10 @@ func (p *anthropicProvider) Stream(ctx context.Context, messages []Message, tool
 				Name string `json:"name"`
 				Text string `json:"text"`
 			} `json:"content_block"`
+			Message struct {
+				Usage anthropicUsage `json:"usage"`
+			} `json:"message"`
+			Usage *anthropicUsage `json:"usage"`
 		}
 
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
@@ -222,6 +250,18 @@ func (p *anthropicProvider) Stream(ctx context.Context, messages []Message, tool
 				currentToolID = ""
 				currentToolName = ""
 				currentToolInputBuffer = ""
+			}
+
+		case "message_start":
+			fullMessage.Usage = event.Message.Usage.usage()
+
+		case "message_delta":
+			// output_tokens here is the count so far, not an increment.
+			if event.Usage != nil {
+				if fullMessage.Usage == nil {
+					fullMessage.Usage = &Usage{}
+				}
+				fullMessage.Usage.OutputTokens = event.Usage.OutputTokens
 			}
 
 		case "message_stop":
@@ -315,17 +355,7 @@ func (p *anthropicProvider) convertTools(tools []Tool) []map[string]any {
 	return result
 }
 
-func (p *anthropicProvider) convertResponse(result struct {
-	Content []struct {
-		Type  string         `json:"type"`
-		Text  string         `json:"text,omitempty"`
-		ID    string         `json:"id,omitempty"`
-		Name  string         `json:"name,omitempty"`
-		Input map[string]any `json:"input,omitempty"`
-	} `json:"content"`
-	StopReason string `json:"stop_reason"`
-},
-) *Message {
+func (p *anthropicProvider) convertResponse(result anthropicResponse) *Message {
 	msg := &Message{Role: "assistant"}
 
 	for _, c := range result.Content {
