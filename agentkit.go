@@ -36,7 +36,7 @@ type Config struct {
 
 // Tool is a tool executed in the caller's process. Run must respect
 // ctx cancellation: cancellation waits for tools to finish.
-// A panic in Run crashes the process (the tool runs in a goroutine).
+// A panic in Run is recovered and reported to the model as an error.
 type Tool struct {
 	Name        string
 	Description string

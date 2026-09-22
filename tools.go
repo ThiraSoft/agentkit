@@ -65,8 +65,16 @@ func (a *Agent) runTools(ctx context.Context, calls []llm.ToolCall, h Hooks) []T
 	return results
 }
 
-func (a *Agent) runTool(ctx context.Context, c ToolCall) ToolResult {
-	r := ToolResult{ID: c.ID, Name: c.Name}
+func (a *Agent) runTool(ctx context.Context, c ToolCall) (r ToolResult) {
+	r = ToolResult{ID: c.ID, Name: c.Name}
+	// A panicking tool is an error the model is told about, not the end
+	// of the process.
+	defer func() {
+		if p := recover(); p != nil {
+			msg := fmt.Sprintf("panic: %v", p)
+			r.Content, r.Err = "error: "+msg, msg
+		}
+	}()
 	var out string
 	var err error
 	switch {
