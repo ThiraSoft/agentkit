@@ -28,7 +28,10 @@ jobs:
       - name: Test
         run: go test -race ./...
       - name: Release
-        run: gh release create "$TAG" --generate-notes --verify-tag
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
         env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_CURRENT_TAG: ${{ inputs.tag || github.ref_name }}

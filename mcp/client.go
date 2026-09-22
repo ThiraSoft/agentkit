@@ -247,6 +247,12 @@ func convertMCPTool(mcpTool *mcp.Tool) llm.Tool {
 		required = schema.Required
 	}
 
+	// The whole schema goes along, for what Parameters cannot say (enums,
+	// nested objects); a tool without one has "null" here.
+	var full json.RawMessage
+	if len(schemaBytes) > 0 && schemaBytes[0] == '{' {
+		full = schemaBytes
+	}
 	return llm.Tool{
 		Type: "function",
 		Function: llm.FunctionDef{
@@ -257,6 +263,7 @@ func convertMCPTool(mcpTool *mcp.Tool) llm.Tool {
 				Properties: props,
 				Required:   required,
 			},
+			Schema: full,
 		},
 	}
 }

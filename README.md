@@ -21,8 +21,8 @@ agentkit does:
 - MCP servers over stdio, SSE or streamable HTTP, whose tools sit next to
   your Go tools.
 
-agentkit does not do long-term memory, persistence of conversations,
-prompt templates or configuration files. It holds no global state and
+agentkit does not do long-term memory, persistence of conversations or
+prompt templates. It holds no global state and
 writes no file: keep `Conversation.Messages()` wherever you like and pass
 it back to `NewConversation`.
 
@@ -94,12 +94,24 @@ config take precedence over the environment variable and the default URL.
 | `mistral` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` |
 | `ollama` | none | `http://localhost:11434` |
 | `llamacpp` | none | `LLAMACPP_URL` (without `/v1`), or `http://localhost:8080`; if using `BaseURL`, include `/v1` (e.g. `http://localhost:8080/v1`) |
-| `openai-compat` | `Config.APIKey` | none: `BaseURL` is required, e.g. `http://localhost:8000/v1` |
+| `openai-compat` | `Config.APIKey` | none: `BaseURL` is required, e.g. `http://localhost:8000/v1` ; asks for usage with stream_options, which a strict server may refuse (then use llm.NewOpenAICompat) |
 
 Your own provider: implement `llm.Provider` and pass it as
 `Config.ProviderImpl`. For a server that speaks the OpenAI chat/completions
 format but needs its own settings (headers, extra body fields, timeout),
 start from `llm.NewOpenAICompat` and wrap it with `llm.WithRetry`.
+
+`Config.Temperature` and `Config.MaxTokens` go to every provider built by name,
+in its own terms (`max_completion_tokens` for OpenAI, `maxOutputTokens` for
+Gemini, `num_predict` for Ollama). Left unset, the provider's default holds;
+Anthropic, which requires a cap, gets 32000. A provider given as ProviderImpl,
+or built with llm.NewOpenAICompat, takes these options itself (ExtraBody for
+the latter).
+
+`Config.PromptCache` marks the prompt for caching on Anthropic, which has to
+be told: the tools and the system prompt, and the conversation as it grows.
+OpenAI and Gemini cache on their own. Either way, `Turn.Usage` says how many
+prompt tokens came from the cache.
 
 ## Hooks
 
@@ -117,6 +129,84 @@ start from `llm.NewOpenAICompat` and wrap it with `llm.WithRetry`.
   without touching the history;
 - `OnInterrupt(written) kept`: choose what stays in the history when a turn
   is cut.
+
+## Context
+
+agentkit sends the whole history at every step. `KeepTurns(n)` and
+`KeepTokens(budget)` are ready-made `Prepare` hooks that send only the last
+turns, or as many as fit in a token budget (a rough four bytes per token),
+always with the system prompt and the turn under way. They cut at a user
+message, so a tool call never loses its result, and the history itself
+stays whole. With PromptCache, a sliding window changes the cached prefix at
+every turn: only the tools and the system prompt are read back from the cache.
+
+## Tools
+
+A `Tool` describes its arguments with `Parameters`, or with `Schema`, a raw
+JSON Schema that can say more (enums, nested objects, bounds). `NewTool`
+writes the schema from a Go type and decodes the arguments into it:
+
+```go
+type forecastArgs struct {
+	City string `json:"city" jsonschema:"the city to forecast"`
+	Days int    `json:"days,omitempty" jsonschema:"how many days, 1 by default"`
+}
+
+forecast, err := agentkit.NewTool("forecast", "Weather forecast for a city.",
+	func(ctx context.Context, args forecastArgs) (string, error) {
+		return lookup(ctx, args.City, args.Days)
+	})
+```
+
+A panic in a tool is recovered: the model is told the tool failed.
+
+## Usage
+
+`Turn.Usage` sums the tokens of the model calls of a `Send`: `InputTokens`
+(the whole prompt, cache included), `OutputTokens`, `CacheReadTokens` and
+`CacheWriteTokens`, as far as the provider reports them. Each message a
+provider returns carries its own in `llm.Message.Usage`.
+
+## Structured output
+
+`Config.ResponseSchema` makes the model answer with JSON that follows a
+schema, which `SchemaFor` writes from a Go type:
+
+```go
+type verdict struct {
+	Spam   bool   `json:"spam"`
+	Reason string `json:"reason"`
+}
+
+schema, err := agentkit.SchemaFor[verdict]()
+agent, err := agentkit.New(ctx, agentkit.Config{Provider: "openai", Model: "gpt-5-mini", ResponseSchema: schema})
+conv := agent.NewConversation("Classify the message.")
+_, err = conv.Send(ctx, text, agentkit.Hooks{})
+msgs := conv.Messages()
+var v verdict
+err = json.Unmarshal([]byte(msgs[len(msgs)-1].Content), &v)
+```
+
+Not every model takes a response schema together with tools. With tools, Turn.Text joins the text of every step; the answer is the last message.
+
+## Configuration file
+
+`LoadConfig` reads a `Config` from JSON, everything but the Go tools:
+
+```json
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "apiKey": "${ANTHROPIC_API_KEY}",
+  "maxTokens": 8192,
+  "promptCache": true,
+  "mcp": [{"name": "files", "transport": "stdio", "command": "files-mcp --root /tmp"}]
+}
+```
+
+The other fields are `baseURL`, `maxSteps`, `maxToolResult`, `temperature`
+and `responseSchema`. `${VAR}` in `apiKey`, `baseURL` and the MCP servers
+is replaced by the environment variable; an unknown field is an error.
 
 ## MCP
 
@@ -136,6 +226,21 @@ agent, err := agentkit.New(ctx, agentkit.Config{
 `New` fails if a server does not answer, or if two tools share a name. The
 `mcp` package can also be used alone: `mcp.Dial` for one server,
 `mcp.NewManager` for a list.
+
+## Command line
+
+`cmd/agentkit` is a small terminal client, handy to try a model or an MCP
+server:
+
+```sh
+go install github.com/ThiraSoft/agentkit/cmd/agentkit@latest
+agentkit -config agent.json
+agentkit -provider gemini -model gemini-2.5-flash
+```
+
+The answer streams on stdout, the tool calls on stderr. `/reset`, `/usage`,
+`/tools` and `/quit` do what they say; Ctrl-C cuts the answer under way.
+Each release on GitHub carries the binaries.
 
 ## Stability
 

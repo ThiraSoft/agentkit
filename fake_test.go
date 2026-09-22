@@ -17,6 +17,7 @@ type fakeReply struct {
 	calls  []llm.ToolCall
 	block  chan struct{} // non-nil: waits for closure or cancellation
 	err    error
+	usage  *llm.Usage // set on the message returned
 }
 
 // fakeProvider replays its replies in order, one per model call, and
@@ -38,7 +39,7 @@ func (f *fakeProvider) Stream(ctx context.Context, msgs []llm.Message, tools []l
 		return nil, fmt.Errorf("fake: no reply %d", i)
 	}
 	r := f.replies[i]
-	msg := &llm.Message{Role: "assistant"}
+	msg := &llm.Message{Role: "assistant", Usage: r.usage}
 	for _, c := range r.chunks {
 		msg.Content += c
 		if err := onChunk(c); err != nil {

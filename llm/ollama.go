@@ -78,20 +78,28 @@ func ListOllamaModels() []string {
 }
 
 type ollamaProvider struct {
-	baseURL    string
-	Model      string
-	client     *http.Client
-	numCtx     int
-	numPredict int
+	baseURL     string
+	Model       string
+	client      *http.Client
+	numCtx      int
+	numPredict  int
+	temperature *float64
+	format      json.RawMessage
 }
 
-func newOllamaProvider(model string, numCtx, numPredict int) *ollamaProvider {
+func newOllamaProvider(cfg Config) *ollamaProvider {
+	numPredict := cfg.OllamaNumPredict
+	if numPredict == 0 {
+		numPredict = cfg.MaxTokens
+	}
 	return &ollamaProvider{
-		baseURL:    "http://localhost:11434",
-		Model:      model,
-		client:     &http.Client{Timeout: 300 * time.Second},
-		numCtx:     numCtx,
-		numPredict: numPredict,
+		baseURL:     or(cfg.BaseURL, "http://localhost:11434"),
+		Model:       cfg.Model,
+		client:      &http.Client{Timeout: 300 * time.Second},
+		numCtx:      cfg.OllamaNumCtx,
+		numPredict:  numPredict,
+		temperature: cfg.Temperature,
+		format:      cfg.ResponseSchema,
 	}
 }
 
@@ -107,10 +115,32 @@ func (p *ollamaProvider) options() map[string]any {
 	if p.numPredict != 0 {
 		opts["num_predict"] = p.numPredict
 	}
+	if p.temperature != nil {
+		opts["temperature"] = *p.temperature
+	}
 	if len(opts) == 0 {
 		return nil
 	}
 	return opts
+}
+
+// request is the body of an /api/chat request.
+func (p *ollamaProvider) request(messages []Message, tools []Tool, stream bool) map[string]any {
+	body := map[string]any{
+		"model":    p.Model,
+		"messages": toOllamaMessages(messages),
+		"stream":   stream,
+	}
+	if opts := p.options(); opts != nil {
+		body["options"] = opts
+	}
+	if len(tools) > 0 {
+		body["tools"] = tools
+	}
+	if len(p.format) > 0 {
+		body["format"] = p.format
+	}
+	return body
 }
 
 func (p *ollamaProvider) ModelName() string { return p.Model }
@@ -118,17 +148,7 @@ func (p *ollamaProvider) ModelName() string { return p.Model }
 func (p *ollamaProvider) Name() string { return "ollama" }
 
 func (p *ollamaProvider) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
-	reqBody := map[string]any{
-		"model":    p.Model,
-		"messages": toOllamaMessages(messages),
-		"stream":   false,
-	}
-	if opts := p.options(); opts != nil {
-		reqBody["options"] = opts
-	}
-	if len(tools) > 0 {
-		reqBody["tools"] = tools
-	}
+	reqBody := p.request(messages, tools, false)
 
 	body, _ := json.Marshal(reqBody)
 	req, _ := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/api/chat", bytes.NewReader(body))
@@ -146,28 +166,22 @@ func (p *ollamaProvider) Chat(ctx context.Context, messages []Message, tools []T
 	}
 
 	var result struct {
-		Message Message `json:"message"`
+		Message         Message `json:"message"`
+		PromptEvalCount int     `json:"prompt_eval_count"`
+		EvalCount       int     `json:"eval_count"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
-	return &result.Message, nil
+	msg := &result.Message
+	msg.Usage = &Usage{InputTokens: result.PromptEvalCount, OutputTokens: result.EvalCount}
+	return msg, nil
 }
 
 func (p *ollamaProvider) Stream(ctx context.Context, messages []Message, tools []Tool, onChunk func(string) error) (*Message, error) {
-	reqBody := map[string]any{
-		"model":    p.Model,
-		"messages": toOllamaMessages(messages),
-		"stream":   true,
-	}
-	if opts := p.options(); opts != nil {
-		reqBody["options"] = opts
-	}
-	if len(tools) > 0 {
-		reqBody["tools"] = tools
-	}
+	reqBody := p.request(messages, tools, true)
 
 	body, _ := json.Marshal(reqBody)
 	req, _ := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/api/chat", bytes.NewReader(body))
@@ -212,7 +226,9 @@ func (p *ollamaProvider) Stream(ctx context.Context, messages []Message, tools [
 				Content   string     `json:"content"`
 				ToolCalls []ToolCall `json:"tool_calls"`
 			} `json:"message"`
-			Done bool `json:"done"`
+			Done            bool `json:"done"`
+			PromptEvalCount int  `json:"prompt_eval_count"`
+			EvalCount       int  `json:"eval_count"`
 		}
 
 		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
@@ -233,6 +249,7 @@ func (p *ollamaProvider) Stream(ctx context.Context, messages []Message, tools [
 		}
 
 		if chunk.Done {
+			fullMessage.Usage = &Usage{InputTokens: chunk.PromptEvalCount, OutputTokens: chunk.EvalCount}
 			break
 		}
 	}
