@@ -23,6 +23,7 @@ type geminiProvider struct {
 	client      *http.Client
 	temperature *float64
 	maxTokens   int
+	schema      json.RawMessage
 }
 
 func newGeminiProvider(cfg Config) *geminiProvider {
@@ -33,6 +34,7 @@ func newGeminiProvider(cfg Config) *geminiProvider {
 		client:      &http.Client{Timeout: 120 * time.Second},
 		temperature: cfg.Temperature,
 		maxTokens:   cfg.MaxTokens,
+		schema:      cfg.ResponseSchema,
 	}
 }
 
@@ -45,6 +47,10 @@ func (p *geminiProvider) generationConfig() map[string]any {
 	}
 	if p.maxTokens > 0 {
 		gc["maxOutputTokens"] = p.maxTokens
+	}
+	if len(p.schema) > 0 {
+		gc["responseMimeType"] = "application/json"
+		gc["responseJsonSchema"] = p.schema
 	}
 	if len(gc) == 0 {
 		return nil

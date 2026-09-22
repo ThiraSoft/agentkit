@@ -143,6 +143,9 @@ type Config struct {
 	// be told (Anthropic: the system prompt and the tools, and the
 	// conversation so far). OpenAI and Gemini cache on their own.
 	PromptCache bool
+	// ResponseSchema, when set, is a JSON Schema the model's answers must
+	// follow. Not every model takes it together with tools.
+	ResponseSchema json.RawMessage
 }
 
 // Usage counts the tokens of one model call as the provider reports them;

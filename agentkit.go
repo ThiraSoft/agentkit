@@ -19,7 +19,7 @@ const (
 
 // Config describes an agent. ProviderImpl, if non-nil, overrides
 // Provider, Model, BaseURL, APIKey and the provider options below
-// (Temperature, MaxTokens, PromptCache).
+// (Temperature, MaxTokens, PromptCache, ResponseSchema).
 type Config struct {
 	Provider string // "gemini", "openai-compat", "anthropic", "llamacpp"...
 	Model    string
@@ -35,6 +35,11 @@ type Config struct {
 	// PromptCache asks the provider to cache the prompt where it has to be
 	// told (Anthropic); see Turn.Usage for what was read from the cache.
 	PromptCache bool
+	// ResponseSchema, when set, is a JSON Schema (an object) the model's
+	// answers must follow; SchemaFor writes one from a Go type, and the
+	// answer decodes from Turn.Text. Not every model takes it together
+	// with tools.
+	ResponseSchema json.RawMessage
 
 	ProviderImpl llm.Provider
 
@@ -74,16 +79,22 @@ type Agent struct {
 // New builds the provider, connects MCP servers and validates tools.
 // It fails rather than falling back to something else.
 func New(ctx context.Context, cfg Config) (*Agent, error) {
+	if len(cfg.ResponseSchema) > 0 {
+		if err := objectSchema(cfg.ResponseSchema); err != nil {
+			return nil, fmt.Errorf("agentkit: ResponseSchema: %w", err)
+		}
+	}
 	provider := cfg.ProviderImpl
 	if provider == nil {
 		p, err := llm.NewProvider(llm.Config{
-			Provider:    llm.ProviderType(cfg.Provider),
-			Model:       cfg.Model,
-			BaseURL:     cfg.BaseURL,
-			APIKey:      cfg.APIKey,
-			Temperature: cfg.Temperature,
-			MaxTokens:   cfg.MaxTokens,
-			PromptCache: cfg.PromptCache,
+			Provider:       llm.ProviderType(cfg.Provider),
+			Model:          cfg.Model,
+			BaseURL:        cfg.BaseURL,
+			APIKey:         cfg.APIKey,
+			Temperature:    cfg.Temperature,
+			MaxTokens:      cfg.MaxTokens,
+			PromptCache:    cfg.PromptCache,
+			ResponseSchema: cfg.ResponseSchema,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("agentkit: %w", err)

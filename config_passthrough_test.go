@@ -74,3 +74,34 @@ func TestPromptCacheReachesAnthropic(t *testing.T) {
 	}
 }
 
+type verdict struct {
+	Answer string `json:"answer"`
+}
+
+func TestResponseSchemaReachesTheProvider(t *testing.T) {
+	url, body := passthroughServer(t)
+	schema, err := SchemaFor[verdict]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := New(context.Background(), Config{Provider: "openai-compat", BaseURL: url, Model: "m", ResponseSchema: schema})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err := a.NewConversation("s").Send(context.Background(), "hi", Hooks{}); err != nil {
+		t.Fatal(err)
+	}
+	rf, _ := body()["response_format"].(map[string]any)
+	if rf["type"] != "json_schema" {
+		t.Fatalf("body %v", body())
+	}
+}
+
+func TestNewRejectsAResponseSchemaThatIsNotAnObject(t *testing.T) {
+	if a, err := New(context.Background(), Config{ProviderImpl: &fakeProvider{}, ResponseSchema: json.RawMessage(`[]`)}); err == nil {
+		a.Close()
+		t.Fatal("ResponseSchema [] accepted")
+	}
+}
+

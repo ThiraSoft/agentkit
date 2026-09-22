@@ -155,6 +155,26 @@ A panic in a tool is recovered: the model is told the tool failed.
 `CacheWriteTokens`, as far as the provider reports them. Each message a
 provider returns carries its own in `llm.Message.Usage`.
 
+## Structured output
+
+`Config.ResponseSchema` makes the model answer with JSON that follows a
+schema, which `SchemaFor` writes from a Go type:
+
+```go
+type verdict struct {
+	Spam   bool   `json:"spam"`
+	Reason string `json:"reason"`
+}
+
+schema, err := agentkit.SchemaFor[verdict]()
+agent, err := agentkit.New(ctx, agentkit.Config{Provider: "openai", Model: "gpt-5-mini", ResponseSchema: schema})
+turn, err := agent.NewConversation("Classify the message.").Send(ctx, text, agentkit.Hooks{})
+var v verdict
+err = json.Unmarshal([]byte(turn.Text), &v)
+```
+
+Not every model takes a response schema together with tools.
+
 ## MCP
 
 ```go

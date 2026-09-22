@@ -84,6 +84,7 @@ type ollamaProvider struct {
 	numCtx      int
 	numPredict  int
 	temperature *float64
+	format      json.RawMessage
 }
 
 func newOllamaProvider(cfg Config) *ollamaProvider {
@@ -98,6 +99,7 @@ func newOllamaProvider(cfg Config) *ollamaProvider {
 		numCtx:      cfg.OllamaNumCtx,
 		numPredict:  numPredict,
 		temperature: cfg.Temperature,
+		format:      cfg.ResponseSchema,
 	}
 }
 
@@ -134,6 +136,9 @@ func (p *ollamaProvider) request(messages []Message, tools []Tool, stream bool) 
 	}
 	if len(tools) > 0 {
 		body["tools"] = tools
+	}
+	if len(p.format) > 0 {
+		body["format"] = p.format
 	}
 	return body
 }

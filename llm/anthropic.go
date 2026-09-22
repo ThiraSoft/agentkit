@@ -24,6 +24,7 @@ type anthropicProvider struct {
 	maxTokens   int
 	temperature *float64
 	cache       bool
+	schema      json.RawMessage
 }
 
 func newAnthropicProvider(cfg Config) *anthropicProvider {
@@ -40,6 +41,7 @@ func newAnthropicProvider(cfg Config) *anthropicProvider {
 		maxTokens:   maxTokens,
 		temperature: cfg.Temperature,
 		cache:       cfg.PromptCache,
+		schema:      cfg.ResponseSchema,
 	}
 }
 
@@ -73,6 +75,11 @@ func (p *anthropicProvider) request(messages []Message, tools []Tool) map[string
 	}
 	if p.temperature != nil {
 		body["temperature"] = *p.temperature
+	}
+	if len(p.schema) > 0 {
+		body["output_config"] = map[string]any{
+			"format": map[string]any{"type": "json_schema", "schema": p.schema},
+		}
 	}
 	return body
 }
