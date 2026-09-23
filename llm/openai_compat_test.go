@@ -50,3 +50,59 @@ func TestNewOpenAICompat(t *testing.T) {
 		t.Fatal("tool_choice sent on a request without tools")
 	}
 }
+
+func TestOpenAICompatReasoning(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm, \"}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"reasoning\":\"voyons\"}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"salut\"}}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	var thought string
+	p := NewOpenAICompat(OpenAICompatConfig{
+		BaseURL:     srv.URL + "/v1",
+		OnReasoning: func(s string) { thought += s },
+	})
+	var said string
+	msg, err := p.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, func(s string) error { said += s; return nil })
+	if err != nil || msg.Content != "salut" || said != "salut" {
+		t.Fatalf("stream %+v, said %q, %v", msg, said, err)
+	}
+	if thought != "hmm, voyons" {
+		t.Fatalf("reasoning %q", thought)
+	}
+}
+
+func TestOpenAICompatBodyPerRequest(t *testing.T) {
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		bodies = append(bodies, b)
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	think := false
+	p := NewOpenAICompat(OpenAICompatConfig{
+		BaseURL:   srv.URL + "/v1",
+		ExtraBody: map[string]any{"temperature": 0.2},
+		ExtraBodyFunc: func() map[string]any {
+			return map[string]any{"chat_template_kwargs": map[string]any{"enable_thinking": think}}
+		},
+	})
+	for _, on := range []bool{false, true} {
+		think = on
+		if _, err := p.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, want := range []bool{false, true} {
+		kw, _ := bodies[i]["chat_template_kwargs"].(map[string]any)
+		if kw["enable_thinking"] != want || bodies[i]["temperature"] != 0.2 {
+			t.Fatalf("request %d: %v", i, bodies[i])
+		}
+	}
+}

@@ -29,6 +29,8 @@ type openaiCompatProvider struct {
 	extraHeaders map[string]string // Extra HTTP headers applied to every request
 	audioFormat  string            // "audio_url" (vLLM/Gemma) or "input_audio" (OpenAI/llama.cpp)
 	streamUsage  bool
+	onReasoning  func(string)
+	bodyFunc     func() map[string]any
 }
 
 // OpenAICompatConfig describes an OpenAI-compatible chat/completions
@@ -42,8 +44,11 @@ type OpenAICompatConfig struct {
 	// ExtraBody adds raw fields to every request body (tool_choice,
 	// temperature, reasoning_effort...). tool_choice is left out of
 	// requests that carry no tools.
-	ExtraBody    map[string]any
-	ExtraHeaders map[string]string // extra HTTP headers on every request
+	ExtraBody map[string]any
+	// ExtraBodyFunc, when set, is called for every request and its fields
+	// are added after ExtraBody's, for what changes between two requests.
+	ExtraBodyFunc func() map[string]any
+	ExtraHeaders  map[string]string // extra HTTP headers on every request
 	// AudioFormat selects the audio media encoding: "input_audio"
 	// (OpenAI convention, expected by llama.cpp) or "audio_url" (vLLM/Gemma
 	// recipes). Empty defaults to "audio_url".
@@ -51,6 +56,10 @@ type OpenAICompatConfig struct {
 	// StreamUsage asks for the token usage at the end of a stream
 	// (stream_options.include_usage). Some servers refuse the field.
 	StreamUsage bool
+	// OnReasoning, when set, receives what the model thinks before it
+	// answers, as the server streams it apart from the answer
+	// (reasoning_content, or reasoning). It is never part of the message.
+	OnReasoning func(chunk string)
 }
 
 // NewOpenAICompat returns a provider for an OpenAI-compatible endpoint. It
@@ -76,6 +85,8 @@ func newOpenAICompatProvider(cfg OpenAICompatConfig) *openaiCompatProvider {
 		extraHeaders: cfg.ExtraHeaders,
 		audioFormat:  cfg.AudioFormat,
 		streamUsage:  cfg.StreamUsage,
+		onReasoning:  cfg.OnReasoning,
+		bodyFunc:     cfg.ExtraBodyFunc,
 	}
 }
 
@@ -337,6 +348,9 @@ func (p *openaiCompatProvider) request(messages []Message, tools []Tool) map[str
 		}
 		body[k] = v
 	}
+	if p.bodyFunc != nil {
+		maps.Copy(body, p.bodyFunc())
+	}
 	return body
 }
 
@@ -454,8 +468,10 @@ func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, t
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+					Reasoning        string `json:"reasoning"`
+					ToolCalls        []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Function struct {
@@ -480,6 +496,12 @@ func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, t
 		}
 
 		delta := chunk.Choices[0].Delta
+
+		if p.onReasoning != nil {
+			if r := delta.ReasoningContent + delta.Reasoning; r != "" {
+				p.onReasoning(r)
+			}
+		}
 
 		if delta.Content != "" {
 			fullMessage.Content += delta.Content
