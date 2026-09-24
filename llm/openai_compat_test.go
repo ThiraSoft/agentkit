@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -104,5 +105,26 @@ func TestOpenAICompatBodyPerRequest(t *testing.T) {
 		if kw["enable_thinking"] != want || bodies[i]["temperature"] != 0.2 {
 			t.Fatalf("request %d: %v", i, bodies[i])
 		}
+	}
+}
+
+// An error sent once the stream is open comes back as a StreamError, and none
+// of it lands in the answer.
+func TestOpenAICompatStreamError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Je regarde.\"}}]}\n\n")
+		fmt.Fprint(w, "data: {\"error\":{\"message\":\"a call it cannot read\",\"type\":\"server_error\"}}\n\n")
+	}))
+	defer srv.Close()
+
+	p := NewOpenAICompat(OpenAICompatConfig{BaseURL: srv.URL + "/v1", Model: "m", Name: "golem"})
+	var shown string
+	msg, err := p.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, func(s string) error { shown += s; return nil })
+	var se *StreamError
+	if !errors.As(err, &se) || se.Message != "a call it cannot read" || se.Type != "server_error" || se.Provider != "golem" {
+		t.Fatalf("err %v", err)
+	}
+	if msg.Content != "Je regarde." || shown != "Je regarde." {
+		t.Fatalf("content %q, shown %q", msg.Content, shown)
 	}
 }

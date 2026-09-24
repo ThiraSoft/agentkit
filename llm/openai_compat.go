@@ -482,10 +482,19 @@ func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, t
 				} `json:"delta"`
 			} `json:"choices"`
 			Usage *openaiUsage `json:"usage"`
+			// A server that fails once the stream is open says so in an
+			// event of its own, as OpenAI and llama.cpp do.
+			Error *struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+			} `json:"error"`
 		}
 
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		if chunk.Error != nil {
+			return fullMessage, &StreamError{Provider: p.name, Type: chunk.Error.Type, Message: chunk.Error.Message}
 		}
 
 		if chunk.Usage != nil {
@@ -536,4 +545,21 @@ func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, t
 	}
 
 	return fullMessage, nil
+}
+
+// StreamError is an error the server sent down a stream it had already
+// opened, in place of the rest of the answer. Nothing the model said is in
+// it, so a client can show it apart from the answer rather than as part of
+// it.
+type StreamError struct {
+	Provider string // the provider's name
+	Type     string // the server's kind of error, such as server_error
+	Message  string
+}
+
+func (e *StreamError) Error() string {
+	if e.Type == "" {
+		return e.Provider + " stream error: " + e.Message
+	}
+	return e.Provider + " stream error (" + e.Type + "): " + e.Message
 }
