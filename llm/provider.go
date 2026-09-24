@@ -29,13 +29,14 @@ func NewProvider(cfg Config) (Provider, error) {
 			return nil, fmt.Errorf("openai-compat: BaseURL is required")
 		}
 		provider = newOpenAICompatProvider(OpenAICompatConfig{
-			APIKey:      cfg.APIKey,
-			BaseURL:     cfg.BaseURL,
-			Model:       cfg.Model,
-			Name:        string(ProviderOpenAICompat),
-			ExtraBody:   requestFields(cfg, "max_tokens", map[string]any{"tool_choice": "auto"}),
-			StreamUsage: true,
-			Timeout:     cfg.Timeout,
+			APIKey:        cfg.APIKey,
+			BaseURL:       cfg.BaseURL,
+			Model:         cfg.Model,
+			Name:          string(ProviderOpenAICompat),
+			ExtraBody:     requestFields(cfg, "max_tokens", map[string]any{"tool_choice": "auto"}),
+			StreamUsage:   true,
+			Timeout:       cfg.Timeout,
+			DropReasoning: cfg.DropReasoning,
 		})
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", cfg.Provider)

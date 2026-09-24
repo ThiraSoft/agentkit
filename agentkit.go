@@ -20,7 +20,8 @@ const (
 
 // Config describes an agent. ProviderImpl, if non-nil, overrides
 // Provider, Model, BaseURL, APIKey and the provider options below
-// (Temperature, MaxTokens, PromptCache, ResponseSchema, ExtraBody, Timeout).
+// (Temperature, MaxTokens, PromptCache, ResponseSchema, ExtraBody, Timeout,
+// DropReasoning).
 type Config struct {
 	Provider string // "gemini", "openai-compat", "anthropic", "llamacpp"...
 	Model    string
@@ -46,6 +47,9 @@ type Config struct {
 	ExtraBody map[string]any
 	// Timeout is the longest one model call may take; see llm.Config.Timeout.
 	Timeout time.Duration
+	// DropReasoning leaves what the model thought out of the history sent
+	// back; see llm.Config.DropReasoning.
+	DropReasoning bool
 
 	ProviderImpl llm.Provider
 
@@ -114,6 +118,7 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 			ResponseSchema: cfg.ResponseSchema,
 			ExtraBody:      cfg.ExtraBody,
 			Timeout:        cfg.Timeout,
+			DropReasoning:  cfg.DropReasoning,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("agentkit: %w", err)

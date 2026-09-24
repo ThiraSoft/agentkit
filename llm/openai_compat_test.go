@@ -71,8 +71,39 @@ func TestOpenAICompatReasoning(t *testing.T) {
 	if err != nil || msg.Content != "salut" || said != "salut" {
 		t.Fatalf("stream %+v, said %q, %v", msg, said, err)
 	}
-	if thought != "hmm, voyons" {
-		t.Fatalf("reasoning %q", thought)
+	if thought != "hmm, voyons" || msg.Reasoning != "hmm, voyons" {
+		t.Fatalf("reasoning %q, kept %q", thought, msg.Reasoning)
+	}
+}
+
+// The reasoning of an assistant message goes back as reasoning_content,
+// unless DropReasoning leaves it out; a user message never carries one.
+func TestOpenAICompatReasoningSentBack(t *testing.T) {
+	for _, drop := range []bool{false, true} {
+		var body struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		}))
+		p := NewOpenAICompat(OpenAICompatConfig{BaseURL: srv.URL + "/v1", DropReasoning: drop})
+		history := []Message{
+			{Role: "user", Content: "hi", Reasoning: "never sent"},
+			{Role: "assistant", Content: "hello", Reasoning: "they greet me"},
+			{Role: "user", Content: "again"},
+		}
+		if _, err := p.Stream(context.Background(), history, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		srv.Close()
+		if _, sent := body.Messages[0]["reasoning_content"]; sent {
+			t.Fatalf("drop=%v: a user message carried reasoning", drop)
+		}
+		got, sent := body.Messages[1]["reasoning_content"]
+		if drop == sent || (!drop && got != "they greet me") {
+			t.Fatalf("drop=%v: assistant message %v", drop, body.Messages[1])
+		}
 	}
 }
 

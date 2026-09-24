@@ -31,6 +31,13 @@ type (
 
 		Media []Media `json:"media,omitempty"` // for messages containing media
 
+		// Reasoning is what the model thought before it answered, as a
+		// server that speaks OpenAI's format streams it apart
+		// (reasoning_content). It goes back with the history, since a
+		// template such as Qwen's renders it for the turn under way, unless
+		// the provider is told to drop it.
+		Reasoning string `json:"reasoning_content,omitempty"`
+
 		// Usage is set by a provider on the message it returns; nil when
 		// the provider does not report it. It is not part of the JSON.
 		Usage *Usage `json:"-"`
@@ -180,6 +187,10 @@ type Config struct {
 	// 300 for Anthropic and Ollama, 120 for Gemini. A local model that
 	// thinks at length needs more.
 	Timeout time.Duration
+	// DropReasoning leaves what the model thought out of the history sent
+	// back, for the providers that speak OpenAI's format; by default it
+	// goes back as reasoning_content, which is what llama.cpp reads.
+	DropReasoning bool
 }
 
 // Usage counts the tokens of one model call as the provider reports them;

@@ -205,7 +205,8 @@ Not every model takes a response schema together with tools. With tools, Turn.Te
 ```
 
 The other fields are `baseURL`, `maxSteps`, `maxToolResult`, `temperature`,
-`responseSchema`, `extraBody`, `timeout`, `tools`, `workdir` and `system`. `${VAR}` in
+`responseSchema`, `extraBody`, `timeout`, `dropReasoning`, `tools`,
+`workdir` and `system`. `${VAR}` in
 `apiKey`, `baseURL`, `workdir` and the MCP servers is replaced by the
 environment variable; an unknown field is an error.
 
@@ -213,7 +214,15 @@ environment variable; an unknown field is an error.
 that speak OpenAI's format: `top_p`, `presence_penalty`,
 `chat_template_kwargs` and whatever else the server reads. `timeout`, in
 seconds, is the longest one model call may take: 600 by default for the
-OpenAI format, too short for a local model that thinks at length. `system` is kept
+OpenAI format, too short for a local model that thinks at length.
+
+What a model thinks, streamed apart as `reasoning_content`, is kept in
+`Message.Reasoning` and goes back with the history, as llama.cpp reads it:
+Qwen's template renders it for the turn under way, so a model working
+through tools keeps its train of thought from one step to the next.
+`dropReasoning` sends the history back without it. Which past turns keep
+theirs is the template's business: Qwen's takes `preserve_thinking` in
+`chat_template_kwargs`. `system` is kept
 in `Config.System` for the caller; `cmd/agentkit` uses it.
 
 ## Built-in tools

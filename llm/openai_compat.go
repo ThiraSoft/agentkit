@@ -30,6 +30,7 @@ type openaiCompatProvider struct {
 	audioFormat  string            // "audio_url" (vLLM/Gemma) or "input_audio" (OpenAI/llama.cpp)
 	streamUsage  bool
 	onReasoning  func(string)
+	dropThought  bool
 	bodyFunc     func() map[string]any
 }
 
@@ -58,8 +59,12 @@ type OpenAICompatConfig struct {
 	StreamUsage bool
 	// OnReasoning, when set, receives what the model thinks before it
 	// answers, as the server streams it apart from the answer
-	// (reasoning_content, or reasoning). It is never part of the message.
+	// (reasoning_content, or reasoning). It is also kept in the message's
+	// Reasoning, never in its Content.
 	OnReasoning func(chunk string)
+	// DropReasoning sends the history back without the reasoning_content
+	// of its assistant messages.
+	DropReasoning bool
 }
 
 // NewOpenAICompat returns a provider for an OpenAI-compatible endpoint. It
@@ -86,6 +91,7 @@ func newOpenAICompatProvider(cfg OpenAICompatConfig) *openaiCompatProvider {
 		audioFormat:  cfg.AudioFormat,
 		streamUsage:  cfg.StreamUsage,
 		onReasoning:  cfg.OnReasoning,
+		dropThought:  cfg.DropReasoning,
 		bodyFunc:     cfg.ExtraBodyFunc,
 	}
 }
@@ -143,6 +149,7 @@ type openaiMessage struct {
 	ToolCalls []openaiToolCall `json:"tool_calls,omitempty"`
 	ToolID    string           `json:"tool_call_id,omitempty"`
 	Name      string           `json:"name,omitempty"`
+	Reasoning string           `json:"reasoning_content,omitempty"`
 }
 
 // mediaToContentBlocks converts internal Media items to the OpenAI-compatible
@@ -216,7 +223,7 @@ func audioMimeToFormat(mime string) string {
 // OpenAI-compatible APIs, ensuring tool_calls[].function.arguments is always
 // a JSON string and type is always "function".
 // It also sanitizes the history to remove incomplete tool sequences.
-func toOpenAIMessages(messages []Message, audioFormat string) []openaiMessage {
+func toOpenAIMessages(messages []Message, audioFormat string, dropReasoning bool) []openaiMessage {
 	clean := sanitizeMessages(messages)
 	out := make([]openaiMessage, len(clean))
 	for i, m := range clean {
@@ -229,6 +236,9 @@ func toOpenAIMessages(messages []Message, audioFormat string) []openaiMessage {
 			Content: content,
 			ToolID:  m.ToolID,
 			Name:    m.Name,
+		}
+		if m.Role == "assistant" && !dropReasoning {
+			out[i].Reasoning = m.Reasoning
 		}
 		if len(m.ToolCalls) > 0 {
 			out[i].ToolCalls = make([]openaiToolCall, len(m.ToolCalls))
@@ -337,7 +347,7 @@ func sanitizeMessages(messages []Message) []Message {
 func (p *openaiCompatProvider) request(messages []Message, tools []Tool) map[string]any {
 	body := map[string]any{
 		"model":    p.model,
-		"messages": toOpenAIMessages(messages, p.audioFormat),
+		"messages": toOpenAIMessages(messages, p.audioFormat, p.dropThought),
 	}
 	if len(tools) > 0 {
 		body["tools"] = tools
@@ -506,8 +516,9 @@ func (p *openaiCompatProvider) Stream(ctx context.Context, messages []Message, t
 
 		delta := chunk.Choices[0].Delta
 
-		if p.onReasoning != nil {
-			if r := delta.ReasoningContent + delta.Reasoning; r != "" {
+		if r := delta.ReasoningContent + delta.Reasoning; r != "" {
+			fullMessage.Reasoning += r
+			if p.onReasoning != nil {
 				p.onReasoning(r)
 			}
 		}

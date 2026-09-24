@@ -26,9 +26,10 @@ func newLlamaCppProvider(cfg Config) *openaiCompatProvider {
 		Name:      "llamacpp",
 		ExtraBody: requestFields(cfg, "max_tokens", nil),
 		// llama-server (mtmd) follows the OpenAI convention: input_audio block.
-		AudioFormat: "input_audio",
-		StreamUsage: true,
-		Timeout:     cfg.Timeout,
+		AudioFormat:   "input_audio",
+		StreamUsage:   true,
+		Timeout:       cfg.Timeout,
+		DropReasoning: cfg.DropReasoning,
 	})
 }
 
