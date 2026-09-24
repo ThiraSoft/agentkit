@@ -6,6 +6,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 type (
@@ -174,6 +175,11 @@ type Config struct {
 	// the ones above, which it can override: top_p, presence_penalty,
 	// chat_template_kwargs... The other providers ignore it.
 	ExtraBody map[string]any
+	// Timeout is the longest one model call may take, streamed answer
+	// included; 0 keeps the provider's default: 600 s for the OpenAI format,
+	// 300 for Anthropic and Ollama, 120 for Gemini. A local model that
+	// thinks at length needs more.
+	Timeout time.Duration
 }
 
 // Usage counts the tokens of one model call as the provider reports them;

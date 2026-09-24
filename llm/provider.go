@@ -1,6 +1,9 @@
 package llm
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // NewProvider builds the provider described by cfg, wrapped with WithRetry.
 // APIKey and BaseURL, when set, take precedence over the environment
@@ -32,11 +35,20 @@ func NewProvider(cfg Config) (Provider, error) {
 			Name:        string(ProviderOpenAICompat),
 			ExtraBody:   requestFields(cfg, "max_tokens", map[string]any{"tool_choice": "auto"}),
 			StreamUsage: true,
+			Timeout:     cfg.Timeout,
 		})
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", cfg.Provider)
 	}
 	return WithRetry(provider), nil
+}
+
+// timeout is cfg.Timeout, or def when it is not set.
+func timeout(cfg Config, def time.Duration) time.Duration {
+	if cfg.Timeout > 0 {
+		return cfg.Timeout
+	}
+	return def
 }
 
 // or returns s, or def when s is empty.

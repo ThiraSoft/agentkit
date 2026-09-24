@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/ThiraSoft/agentkit/llm"
 	"github.com/ThiraSoft/agentkit/mcp"
@@ -19,7 +20,7 @@ const (
 
 // Config describes an agent. ProviderImpl, if non-nil, overrides
 // Provider, Model, BaseURL, APIKey and the provider options below
-// (Temperature, MaxTokens, PromptCache, ResponseSchema, ExtraBody).
+// (Temperature, MaxTokens, PromptCache, ResponseSchema, ExtraBody, Timeout).
 type Config struct {
 	Provider string // "gemini", "openai-compat", "anthropic", "llamacpp"...
 	Model    string
@@ -43,6 +44,8 @@ type Config struct {
 	// ExtraBody adds raw fields to the request body of the providers that
 	// speak OpenAI's format; see llm.Config.ExtraBody.
 	ExtraBody map[string]any
+	// Timeout is the longest one model call may take; see llm.Config.Timeout.
+	Timeout time.Duration
 
 	ProviderImpl llm.Provider
 
@@ -110,6 +113,7 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 			PromptCache:    cfg.PromptCache,
 			ResponseSchema: cfg.ResponseSchema,
 			ExtraBody:      cfg.ExtraBody,
+			Timeout:        cfg.Timeout,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("agentkit: %w", err)

@@ -31,7 +31,7 @@ func newGeminiProvider(cfg Config) *geminiProvider {
 		baseURL:     or(cfg.BaseURL, "https://generativelanguage.googleapis.com/v1beta"),
 		apiKey:      or(cfg.APIKey, os.Getenv("GEMINI_API_KEY")),
 		Model:       cfg.Model,
-		client:      &http.Client{Timeout: 120 * time.Second},
+		client:      &http.Client{Timeout: timeout(cfg, 120*time.Second)},
 		temperature: cfg.Temperature,
 		maxTokens:   cfg.MaxTokens,
 		schema:      cfg.ResponseSchema,

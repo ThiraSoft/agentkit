@@ -95,7 +95,7 @@ func newOllamaProvider(cfg Config) *ollamaProvider {
 	return &ollamaProvider{
 		baseURL:     or(cfg.BaseURL, "http://localhost:11434"),
 		Model:       cfg.Model,
-		client:      &http.Client{Timeout: 300 * time.Second},
+		client:      &http.Client{Timeout: timeout(cfg, 300*time.Second)},
 		numCtx:      cfg.OllamaNumCtx,
 		numPredict:  numPredict,
 		temperature: cfg.Temperature,

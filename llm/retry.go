@@ -52,6 +52,11 @@ func isTransient(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
+	// A call that ran past the client's whole-request timeout would run past
+	// it again: the model was slow, not the network.
+	if strings.Contains(err.Error(), "Client.Timeout exceeded") {
+		return false
+	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return true

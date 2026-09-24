@@ -205,13 +205,15 @@ Not every model takes a response schema together with tools. With tools, Turn.Te
 ```
 
 The other fields are `baseURL`, `maxSteps`, `maxToolResult`, `temperature`,
-`responseSchema`, `extraBody`, `tools`, `workdir` and `system`. `${VAR}` in
+`responseSchema`, `extraBody`, `timeout`, `tools`, `workdir` and `system`. `${VAR}` in
 `apiKey`, `baseURL`, `workdir` and the MCP servers is replaced by the
 environment variable; an unknown field is an error.
 
 `extraBody` adds raw fields to the body of every request, for the providers
 that speak OpenAI's format: `top_p`, `presence_penalty`,
-`chat_template_kwargs` and whatever else the server reads. `system` is kept
+`chat_template_kwargs` and whatever else the server reads. `timeout`, in
+seconds, is the longest one model call may take: 600 by default for the
+OpenAI format, too short for a local model that thinks at length. `system` is kept
 in `Config.System` for the caller; `cmd/agentkit` uses it.
 
 ## Built-in tools

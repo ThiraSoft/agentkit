@@ -12,5 +12,6 @@ func newOpenAIProvider(cfg Config) *openaiCompatProvider {
 		Name:        "openai",
 		ExtraBody:   requestFields(cfg, "max_completion_tokens", nil),
 		StreamUsage: true,
+		Timeout:     cfg.Timeout,
 	})
 }

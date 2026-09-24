@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ThiraSoft/agentkit/mcp"
 )
@@ -28,6 +29,7 @@ type fileConfig struct {
 	Workdir        string             `json:"workdir"`
 	System         string             `json:"system"`
 	ExtraBody      map[string]any     `json:"extraBody"`
+	Timeout        int                `json:"timeout"`
 }
 
 // placeholder matches the ${VAR} that LoadConfig expands.
@@ -47,13 +49,14 @@ var placeholder = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 //	  "promptCache": false,
 //	  "responseSchema": {"type": "object"},
 //	  "extraBody": {"top_p": 0.8, "chat_template_kwargs": {"enable_thinking": true}},
+//	  "timeout": 1800,
 //	  "mcp": [{"name": "files", "transport": "stdio", "command": "files-mcp --root /tmp"}],
 //	  "tools": ["read_file", "edit_file", "grep"],
 //	  "workdir": "~/src/project",
 //	  "system": "You are a careful engineer."
 //	}
 //
-// Only provider is required. tools names built-in tools (Config.Builtins),
+// timeout is in seconds, the longest one model call may take. Only provider is required. tools names built-in tools (Config.Builtins),
 // none if absent. ${VAR} in apiKey, baseURL and workdir is replaced by the
 // environment variable, and a leading ~ in workdir by the home directory; in
 // mcp, Dial does the same when it connects.
@@ -92,6 +95,7 @@ func LoadConfig(path string) (Config, error) {
 		Workdir:        expandHome(expandEnv(f.Workdir)),
 		System:         f.System,
 		ExtraBody:      f.ExtraBody,
+		Timeout:        time.Duration(f.Timeout) * time.Second,
 	}, nil
 }
 

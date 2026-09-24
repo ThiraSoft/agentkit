@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeConfig(t *testing.T, content string) string {
@@ -76,12 +77,13 @@ func TestLoadConfigTools(t *testing.T) {
 		"tools": ["read_file", "bash"],
 		"workdir": "~/${AK_TEST_REPO}",
 		"system": "Be brief.",
-		"extraBody": {"top_p": 0.8}
+		"extraBody": {"top_p": 0.8},
+		"timeout": 1800
 	}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(cfg.Builtins, ",") != "read_file,bash" || cfg.Workdir != "/home/someone/src/repo" || cfg.System != "Be brief." || cfg.ExtraBody["top_p"] != 0.8 {
+	if strings.Join(cfg.Builtins, ",") != "read_file,bash" || cfg.Workdir != "/home/someone/src/repo" || cfg.System != "Be brief." || cfg.ExtraBody["top_p"] != 0.8 || cfg.Timeout != 30*time.Minute {
 		t.Fatalf("%+v", cfg)
 	}
 	cfg, err = LoadConfig(writeConfig(t, `{"provider": "gemini"}`))

@@ -37,7 +37,7 @@ func newAnthropicProvider(cfg Config) *anthropicProvider {
 		baseURL:     or(cfg.BaseURL, "https://api.anthropic.com/v1"),
 		Model:       cfg.Model,
 		version:     "2023-06-01",
-		client:      &http.Client{Timeout: 300 * time.Second},
+		client:      &http.Client{Timeout: timeout(cfg, 300*time.Second)},
 		maxTokens:   maxTokens,
 		temperature: cfg.Temperature,
 		cache:       cfg.PromptCache,

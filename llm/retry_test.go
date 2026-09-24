@@ -3,7 +3,10 @@ package llm
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // flakyProvider fails n times then responds.
@@ -122,4 +125,30 @@ func TestWithRetryIsExportedAndIdempotent(t *testing.T) {
 	if WithRetry(nil) != nil {
 		t.Fatal("WithRetry(nil) is not nil")
 	}
+}
+
+// A call cut by the client's own timeout is not retried: it would be cut again.
+func TestClientTimeoutNotRetried(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+	}))
+	defer srv.Close()
+	calls := 0
+	p := WithRetry(&countingProvider{Provider: NewOpenAICompat(OpenAICompatConfig{BaseURL: srv.URL + "/v1", Timeout: 50 * time.Millisecond}), calls: &calls})
+	if _, err := p.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, nil); err == nil {
+		t.Fatal("no timeout")
+	}
+	if calls != 1 {
+		t.Fatalf("%d calls", calls)
+	}
+}
+
+type countingProvider struct {
+	Provider
+	calls *int
+}
+
+func (c *countingProvider) Stream(ctx context.Context, m []Message, tools []Tool, f func(string) error) (*Message, error) {
+	*c.calls++
+	return c.Provider.Stream(ctx, m, tools, f)
 }

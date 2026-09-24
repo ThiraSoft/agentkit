@@ -11,5 +11,6 @@ func newMistralProvider(cfg Config) *openaiCompatProvider {
 		Model:     cfg.Model,
 		Name:      "mistral",
 		ExtraBody: requestFields(cfg, "max_tokens", map[string]any{"tool_choice": "auto"}),
+		Timeout:   cfg.Timeout,
 	})
 }
