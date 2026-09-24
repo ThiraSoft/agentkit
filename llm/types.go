@@ -169,6 +169,11 @@ type Config struct {
 	// ResponseSchema, when set, is a JSON Schema the model's answers must
 	// follow. Not every model takes it together with tools.
 	ResponseSchema json.RawMessage
+	// ExtraBody adds raw fields to every request body of the providers that
+	// speak OpenAI's format (openai, mistral, llamacpp, openai-compat), after
+	// the ones above, which it can override: top_p, presence_penalty,
+	// chat_template_kwargs... The other providers ignore it.
+	ExtraBody map[string]any
 }
 
 // Usage counts the tokens of one model call as the provider reports them;

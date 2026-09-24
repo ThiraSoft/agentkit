@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/ThiraSoft/agentkit/mcp"
 )
@@ -23,6 +24,10 @@ type fileConfig struct {
 	PromptCache    bool               `json:"promptCache"`
 	ResponseSchema json.RawMessage    `json:"responseSchema"`
 	MCP            []mcp.ServerConfig `json:"mcp"`
+	Tools          []string           `json:"tools"`
+	Workdir        string             `json:"workdir"`
+	System         string             `json:"system"`
+	ExtraBody      map[string]any     `json:"extraBody"`
 }
 
 // placeholder matches the ${VAR} that LoadConfig expands.
@@ -41,11 +46,17 @@ var placeholder = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 //	  "maxTokens": 4096,
 //	  "promptCache": false,
 //	  "responseSchema": {"type": "object"},
-//	  "mcp": [{"name": "files", "transport": "stdio", "command": "files-mcp --root /tmp"}]
+//	  "extraBody": {"top_p": 0.8, "chat_template_kwargs": {"enable_thinking": true}},
+//	  "mcp": [{"name": "files", "transport": "stdio", "command": "files-mcp --root /tmp"}],
+//	  "tools": ["read_file", "edit_file", "grep"],
+//	  "workdir": "~/src/project",
+//	  "system": "You are a careful engineer."
 //	}
 //
-// Only provider is required. ${VAR} in apiKey and baseURL is replaced by
-// the environment variable; in mcp, Dial does the same when it connects.
+// Only provider is required. tools names built-in tools (Config.Builtins),
+// none if absent. ${VAR} in apiKey, baseURL and workdir is replaced by the
+// environment variable, and a leading ~ in workdir by the home directory; in
+// mcp, Dial does the same when it connects.
 // An unknown field is an error. Tools and ProviderImpl, being Go, are for
 // the caller to add to the returned Config.
 func LoadConfig(path string) (Config, error) {
@@ -77,7 +88,23 @@ func LoadConfig(path string) (Config, error) {
 		PromptCache:    f.PromptCache,
 		ResponseSchema: f.ResponseSchema,
 		MCP:            f.MCP,
+		Builtins:       f.Tools,
+		Workdir:        expandHome(expandEnv(f.Workdir)),
+		System:         f.System,
+		ExtraBody:      f.ExtraBody,
 	}, nil
+}
+
+// expandHome replaces a leading ~ by the home directory.
+func expandHome(s string) string {
+	if s != "~" && !strings.HasPrefix(s, "~/") {
+		return s
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return s
+	}
+	return home + s[1:]
 }
 
 // expandEnv replaces every ${VAR} in s by the environment variable VAR,

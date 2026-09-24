@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -93,5 +94,29 @@ func TestOllamaOptionsComeFromConfig(t *testing.T) {
 	o := UnwrapProvider(p).(*ollamaProvider)
 	if o.numCtx != 16384 || o.numPredict != 512 {
 		t.Fatalf("numCtx %d, numPredict %d", o.numCtx, o.numPredict)
+	}
+}
+
+// ExtraBody goes into the request, after the fields Config sets, which it
+// can override.
+func TestNewProviderExtraBody(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	temp := 0.2
+	p, err := NewProvider(Config{Provider: ProviderOpenAICompat, BaseURL: srv.URL + "/v1", Temperature: &temp,
+		ExtraBody: map[string]any{"temperature": 0.7, "chat_template_kwargs": map[string]any{"enable_thinking": true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	kwargs, _ := body["chat_template_kwargs"].(map[string]any)
+	if body["temperature"] != 0.7 || kwargs["enable_thinking"] != true {
+		t.Fatalf("body %v", body)
 	}
 }

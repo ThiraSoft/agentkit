@@ -19,7 +19,7 @@ const (
 
 // Config describes an agent. ProviderImpl, if non-nil, overrides
 // Provider, Model, BaseURL, APIKey and the provider options below
-// (Temperature, MaxTokens, PromptCache, ResponseSchema).
+// (Temperature, MaxTokens, PromptCache, ResponseSchema, ExtraBody).
 type Config struct {
 	Provider string // "gemini", "openai-compat", "anthropic", "llamacpp"...
 	Model    string
@@ -40,11 +40,24 @@ type Config struct {
 	// answer is the text of the last message of the history (Turn.Text too
 	// when no tool ran). Not every model takes it together with tools.
 	ResponseSchema json.RawMessage
+	// ExtraBody adds raw fields to the request body of the providers that
+	// speak OpenAI's format; see llm.Config.ExtraBody.
+	ExtraBody map[string]any
 
 	ProviderImpl llm.Provider
 
 	Tools []Tool
 	MCP   []mcp.ServerConfig
+
+	// Builtins names the tools agentkit provides that the agent may use,
+	// from Builtins(); none by default. They work in Workdir, the current
+	// directory when empty. See BuiltinTools.
+	Builtins []string
+	Workdir  string
+
+	// System is the agent's system prompt, kept for the caller: New does
+	// not use it, NewConversation takes the prompt it is given.
+	System string
 
 	MaxSteps      int // model calls per Send, 20 by default
 	MaxToolResult int // bytes kept from a tool result, 32 KB by default
@@ -67,6 +80,7 @@ type Tool struct {
 // Agent brings together a provider and tools. It holds no conversation state
 // and serves multiple Conversations concurrently.
 type Agent struct {
+	system        string
 	provider      llm.Provider
 	defs          []llm.Tool
 	local         map[string]Tool
@@ -95,13 +109,27 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 			MaxTokens:      cfg.MaxTokens,
 			PromptCache:    cfg.PromptCache,
 			ResponseSchema: cfg.ResponseSchema,
+			ExtraBody:      cfg.ExtraBody,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("agentkit: %w", err)
 		}
 		provider = p
 	}
+	tools := cfg.Tools
+	if len(cfg.Builtins) > 0 {
+		dir := cfg.Workdir
+		if dir == "" {
+			dir = "."
+		}
+		builtins, err := BuiltinTools(dir, cfg.Builtins)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(builtins, tools...)
+	}
 	a := &Agent{
+		system:        cfg.System,
 		provider:      provider,
 		local:         map[string]Tool{},
 		remote:        map[string]bool{},
@@ -115,7 +143,7 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 		a.maxToolResult = defaultMaxToolResult
 	}
 
-	for _, t := range cfg.Tools {
+	for _, t := range tools {
 		if t.Name == "" || t.Run == nil {
 			return nil, fmt.Errorf("agentkit: tool %q has no name or no Run func", t.Name)
 		}
@@ -168,6 +196,9 @@ func (a *Agent) Tools() []string {
 	}
 	return names
 }
+
+// System returns Config.System.
+func (a *Agent) System() string { return a.system }
 
 // Close disconnects MCP servers.
 func (a *Agent) Close() error {

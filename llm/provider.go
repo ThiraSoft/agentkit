@@ -49,7 +49,7 @@ func or(s, def string) string {
 
 // requestFields adds to fields, a new map when nil, the body fields of an
 // OpenAI-compatible request that cfg asks for: the temperature, the token
-// cap under maxField, and the response format.
+// cap under maxField, the response format, and ExtraBody last.
 func requestFields(cfg Config, maxField string, fields map[string]any) map[string]any {
 	if fields == nil {
 		fields = map[string]any{}
@@ -68,6 +68,9 @@ func requestFields(cfg Config, maxField string, fields map[string]any) map[strin
 				"schema": cfg.ResponseSchema,
 			},
 		}
+	}
+	for k, v := range cfg.ExtraBody {
+		fields[k] = v
 	}
 	return fields
 }

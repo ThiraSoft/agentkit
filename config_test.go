@@ -67,3 +67,40 @@ func TestLoadConfigRefuses(t *testing.T) {
 		t.Error("a missing file was read")
 	}
 }
+
+func TestLoadConfigTools(t *testing.T) {
+	t.Setenv("HOME", "/home/someone")
+	t.Setenv("AK_TEST_REPO", "src/repo")
+	cfg, err := LoadConfig(writeConfig(t, `{
+		"provider": "gemini",
+		"tools": ["read_file", "bash"],
+		"workdir": "~/${AK_TEST_REPO}",
+		"system": "Be brief.",
+		"extraBody": {"top_p": 0.8}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.Builtins, ",") != "read_file,bash" || cfg.Workdir != "/home/someone/src/repo" || cfg.System != "Be brief." || cfg.ExtraBody["top_p"] != 0.8 {
+		t.Fatalf("%+v", cfg)
+	}
+	cfg, err = LoadConfig(writeConfig(t, `{"provider": "gemini"}`))
+	if err != nil || cfg.Builtins != nil || cfg.Workdir != "" {
+		t.Fatalf("%+v %v", cfg, err)
+	}
+}
+
+// The example in the repository stays a config LoadConfig reads, with tools
+// New knows.
+func TestExampleImplementer(t *testing.T) {
+	cfg, err := LoadConfig("examples/implementer.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Builtins) == 0 || cfg.System == "" {
+		t.Fatalf("%+v", cfg)
+	}
+	if _, err := BuiltinTools(t.TempDir(), cfg.Builtins); err != nil {
+		t.Fatal(err)
+	}
+}

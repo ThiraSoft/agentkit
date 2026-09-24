@@ -22,9 +22,9 @@ agentkit does:
   your Go tools.
 
 agentkit does not do long-term memory, persistence of conversations or
-prompt templates. It holds no global state and
-writes no file: keep `Conversation.Messages()` wherever you like and pass
-it back to `NewConversation`.
+prompt templates. It holds no global state and writes no file, unless you
+turn on its built-in file tools: keep `Conversation.Messages()` wherever
+you like and pass it back to `NewConversation`.
 
 ## Install
 
@@ -204,9 +204,38 @@ Not every model takes a response schema together with tools. With tools, Turn.Te
 }
 ```
 
-The other fields are `baseURL`, `maxSteps`, `maxToolResult`, `temperature`
-and `responseSchema`. `${VAR}` in `apiKey`, `baseURL` and the MCP servers
-is replaced by the environment variable; an unknown field is an error.
+The other fields are `baseURL`, `maxSteps`, `maxToolResult`, `temperature`,
+`responseSchema`, `extraBody`, `tools`, `workdir` and `system`. `${VAR}` in
+`apiKey`, `baseURL`, `workdir` and the MCP servers is replaced by the
+environment variable; an unknown field is an error.
+
+`extraBody` adds raw fields to the body of every request, for the providers
+that speak OpenAI's format: `top_p`, `presence_penalty`,
+`chat_template_kwargs` and whatever else the server reads. `system` is kept
+in `Config.System` for the caller; `cmd/agentkit` uses it.
+
+## Built-in tools
+
+agentkit comes with tools for an agent that works on code: `read_file`,
+`write_file`, `edit_file`, `list_dir`, `grep` and `bash`. An agent has none
+of them unless its config names them, in `Config.Builtins` or `tools` in the
+file:
+
+```json
+{
+  "provider": "openai-compat",
+  "baseURL": "http://127.0.0.1:8080/v1",
+  "tools": ["read_file", "edit_file", "grep", "bash"],
+  "workdir": "~/src/project"
+}
+```
+
+They work in `Workdir`, the current directory when empty. The file tools
+cannot leave it, through `..` or a link; `bash` runs `sh -c` there and can
+do whatever the process can, so name it only for an agent you would let type
+in your terminal. `BuiltinTools(dir, names)` builds them for a Config of your
+own. [`examples/implementer.json`](examples/implementer.json) is an agent
+that implements a bounded task in a repository, with all of them.
 
 ## MCP
 
@@ -241,6 +270,18 @@ agentkit -provider gemini -model gemini-2.5-flash
 The answer streams on stdout, the tool calls on stderr. `/reset`, `/usage`,
 `/tools` and `/quit` do what they say; Ctrl-C cuts the answer under way.
 Each release on GitHub carries the binaries.
+
+`-p` sends one message and leaves: stdout gets the last message alone, so a
+script or another agent reads the answer and nothing else, and stderr the
+errors; `-v` shows there what the model wrote on the way and its tool calls. The exit code is 1 when
+the turn failed. `-session file` reads the conversation from the file if it
+exists and writes it back after each turn, to take a task up again;
+`-workdir` overrides the config's.
+
+```sh
+agentkit -config examples/implementer.json -workdir . -session task.json -p "Add a --json flag to cmd/list."
+agentkit -config examples/implementer.json -workdir . -session task.json -p "The test fails on Windows paths, fix that."
+```
 
 ## Stability
 
