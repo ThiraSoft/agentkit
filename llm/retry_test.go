@@ -152,3 +152,18 @@ func (c *countingProvider) Stream(ctx context.Context, m []Message, tools []Tool
 	*c.calls++
 	return c.Provider.Stream(ctx, m, tools, f)
 }
+
+// An error the server sent down its stream is its answer: asked again, it says
+// it again, however many digits its message happens to carry.
+func TestRetry_StreamErrorFailsFast(t *testing.T) {
+	inner := &flakyProvider{failures: 10, err: &StreamError{Provider: "golem", Type: "server_error",
+		Message: "serve: the context is full: the conversation reached 32500 positions"}}
+	p := WithRetry(inner)
+
+	if _, err := p.Stream(context.Background(), nil, nil, func(string) error { return nil }); err == nil {
+		t.Fatal("expected error")
+	}
+	if inner.calls != 1 {
+		t.Errorf("a stream error must not retry, got %d calls", inner.calls)
+	}
+}

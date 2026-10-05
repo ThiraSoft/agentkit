@@ -52,6 +52,14 @@ func isTransient(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
+	// An error the server sent down a stream it had opened is the server's
+	// answer, not a dropped connection: asked again, it says it again. And its
+	// message is free text, where the markers below match by chance ("the
+	// conversation reached 32500 positions" holds "500").
+	var streamErr *StreamError
+	if errors.As(err, &streamErr) {
+		return false
+	}
 	// A call that ran past the client's whole-request timeout would run past
 	// it again: the model was slow, not the network.
 	if strings.Contains(err.Error(), "Client.Timeout exceeded") {
