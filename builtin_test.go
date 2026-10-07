@@ -109,19 +109,24 @@ func TestListDirAndGrep(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "pkg"), 0o755)
 	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "node_modules/dep"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "__pycache__"), 0o755)
 	os.WriteFile(filepath.Join(dir, "pkg/a.go"), []byte("package pkg\nfunc Hello() {}\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "pkg/a.pyc"), []byte("Hello\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "notes.md"), []byte("Hello there\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, ".git/config"), []byte("Hello\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "node_modules/dep/index.js"), []byte("Hello\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "__pycache__/mod.pyc"), []byte("Hello\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "bin"), []byte("Hello\x00"), 0o644)
 
 	list := builtin(t, dir, "list_dir")
-	if out, err := list(`{}`); err != nil || out != ".git/\nbin\nnotes.md\npkg/" {
+	if out, err := list(`{}`); err != nil || out != ".git/\n__pycache__/\nbin\nnode_modules/\nnotes.md\npkg/" {
 		t.Fatalf("%q %v", out, err)
 	}
 	if out, err := list(`{"recursive":true}`); err != nil || out != "bin\nnotes.md\npkg/\npkg/a.go" {
 		t.Fatalf("%q %v", out, err)
 	}
-	if out, err := list(`{"path":"pkg"}`); err != nil || out != "a.go" {
+	if out, err := list(`{"path":"pkg"}`); err != nil || out != "a.go\na.pyc" {
 		t.Fatalf("%q %v", out, err)
 	}
 

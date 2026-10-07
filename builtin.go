@@ -216,7 +216,14 @@ type listArgs struct {
 }
 
 // skipped are the directories a listing or a search does not go into.
-var skipped = map[string]bool{".git": true, "node_modules": true}
+var skipped = map[string]bool{
+	".git":          true,
+	"node_modules":  true,
+	"__pycache__":   true,
+	".pytest_cache": true,
+	".mypy_cache":   true,
+	".ruff_cache":   true,
+}
 
 func (w workdir) listDir(_ context.Context, a listArgs) (string, error) {
 	root, err := w.open()
@@ -245,6 +252,9 @@ func (w workdir) listDir(_ context.Context, a listArgs) (string, error) {
 			}
 			if e.IsDir() && skipped[e.Name()] {
 				return fs.SkipDir
+			}
+			if !e.IsDir() && (strings.HasSuffix(e.Name(), ".pyc") || strings.HasSuffix(e.Name(), ".pyo")) {
+				return nil
 			}
 			rel := strings.TrimPrefix(p, dir+"/")
 			if dir == "." {
@@ -306,6 +316,9 @@ func (w workdir) grep(ctx context.Context, a grepArgs) (string, error) {
 			if p != start && skipped[e.Name()] {
 				return fs.SkipDir
 			}
+			return nil
+		}
+		if strings.HasSuffix(e.Name(), ".pyc") || strings.HasSuffix(e.Name(), ".pyo") {
 			return nil
 		}
 		if a.Glob != "" {
