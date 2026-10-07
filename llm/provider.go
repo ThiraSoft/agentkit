@@ -33,7 +33,7 @@ func NewProvider(cfg Config) (Provider, error) {
 			BaseURL:       cfg.BaseURL,
 			Model:         cfg.Model,
 			Name:          string(ProviderOpenAICompat),
-			ExtraBody:     requestFields(cfg, "max_tokens", map[string]any{"tool_choice": "auto"}),
+			ExtraBody:     templateFields(cfg, "max_tokens", map[string]any{"tool_choice": "auto"}),
 			StreamUsage:   true,
 			Timeout:       cfg.Timeout,
 			DropReasoning: cfg.DropReasoning,
@@ -84,6 +84,17 @@ func requestFields(cfg Config, maxField string, fields map[string]any) map[strin
 	}
 	for k, v := range cfg.ExtraBody {
 		fields[k] = v
+	}
+	return fields
+}
+
+// templateFields are requestFields for a server that renders the model's
+// template itself, llama.cpp's way: Config.Thinking goes in
+// chat_template_kwargs.enable_thinking.
+func templateFields(cfg Config, maxField string, fields map[string]any) map[string]any {
+	fields = requestFields(cfg, maxField, fields)
+	if cfg.Thinking != nil {
+		enableThinking(fields, *cfg.Thinking)
 	}
 	return fields
 }

@@ -21,7 +21,7 @@ const (
 // Config describes an agent. ProviderImpl, if non-nil, overrides
 // Provider, Model, BaseURL, APIKey and the provider options below
 // (Temperature, MaxTokens, PromptCache, ResponseSchema, ExtraBody, Timeout,
-// DropReasoning).
+// DropReasoning, Thinking).
 type Config struct {
 	Provider string // "gemini", "openai-compat", "anthropic", "llamacpp"...
 	Model    string
@@ -50,6 +50,9 @@ type Config struct {
 	// DropReasoning leaves what the model thought out of the history sent
 	// back; see llm.Config.DropReasoning.
 	DropReasoning bool
+	// Thinking turns the model's reasoning on or off, nil leaving its
+	// default; see llm.Config.Thinking.
+	Thinking *bool
 
 	ProviderImpl llm.Provider
 
@@ -119,6 +122,7 @@ func New(ctx context.Context, cfg Config) (*Agent, error) {
 			ExtraBody:      cfg.ExtraBody,
 			Timeout:        cfg.Timeout,
 			DropReasoning:  cfg.DropReasoning,
+			Thinking:       cfg.Thinking,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("agentkit: %w", err)

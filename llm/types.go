@@ -37,6 +37,11 @@ type (
 		// template such as Qwen's renders it for the turn under way, unless
 		// the provider is told to drop it.
 		Reasoning string `json:"reasoning_content,omitempty"`
+		// ThinkingBlocks are an Anthropic answer's thinking and
+		// redacted_thinking blocks, signature included, as they came. They
+		// are sent back, unchanged, while the turn is going on: a model
+		// thinking through tools needs them.
+		ThinkingBlocks []json.RawMessage `json:"thinking_blocks,omitempty"`
 
 		// Usage is set by a provider on the message it returns; nil when
 		// the provider does not report it. It is not part of the JSON.
@@ -191,6 +196,16 @@ type Config struct {
 	// back, for the providers that speak OpenAI's format; by default it
 	// goes back as reasoning_content, which is what llama.cpp reads.
 	DropReasoning bool
+	// Thinking, when set, turns the model's reasoning on or off, with the
+	// knob its provider and model take: chat_template_kwargs.enable_thinking
+	// for llamacpp and openai-compat, as llama.cpp reads it; think for
+	// Ollama; thinkingConfig for Gemini 2.5 and after; thinking or
+	// output_config.effort for Claude 3.7 and after; reasoning_effort for
+	// OpenAI's reasoning models. A model with no such knob, Mistral's
+	// included, keeps its default; so does one that cannot do what is asked
+	// (Gemini 2.5 Pro and Gemini 3 always think, and Claude Opus 5 and after
+	// think at the lowest effort). nil leaves the model's default.
+	Thinking *bool
 }
 
 // Usage counts the tokens of one model call as the provider reports them;

@@ -85,12 +85,17 @@ type ollamaProvider struct {
 	numPredict  int
 	temperature *float64
 	format      json.RawMessage
+	think       any // the think field, nil when not asked
 }
 
 func newOllamaProvider(cfg Config) *ollamaProvider {
 	numPredict := cfg.OllamaNumPredict
 	if numPredict == 0 {
 		numPredict = cfg.MaxTokens
+	}
+	var think any
+	if cfg.Thinking != nil {
+		think = ollamaThink(cfg.Model, *cfg.Thinking)
 	}
 	return &ollamaProvider{
 		baseURL:     or(cfg.BaseURL, "http://localhost:11434"),
@@ -100,6 +105,7 @@ func newOllamaProvider(cfg Config) *ollamaProvider {
 		numPredict:  numPredict,
 		temperature: cfg.Temperature,
 		format:      cfg.ResponseSchema,
+		think:       think,
 	}
 }
 
@@ -140,6 +146,9 @@ func (p *ollamaProvider) request(messages []Message, tools []Tool, stream bool) 
 	if len(p.format) > 0 {
 		body["format"] = p.format
 	}
+	if p.think != nil {
+		body["think"] = p.think
+	}
 	return body
 }
 
@@ -166,16 +175,20 @@ func (p *ollamaProvider) Chat(ctx context.Context, messages []Message, tools []T
 	}
 
 	var result struct {
-		Message         Message `json:"message"`
-		PromptEvalCount int     `json:"prompt_eval_count"`
-		EvalCount       int     `json:"eval_count"`
+		Message struct {
+			Message
+			Thinking string `json:"thinking"`
+		} `json:"message"`
+		PromptEvalCount int `json:"prompt_eval_count"`
+		EvalCount       int `json:"eval_count"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
-	msg := &result.Message
+	msg := &result.Message.Message
+	msg.Reasoning += result.Message.Thinking
 	msg.Usage = &Usage{InputTokens: result.PromptEvalCount, OutputTokens: result.EvalCount}
 	return msg, nil
 }
@@ -224,6 +237,7 @@ func (p *ollamaProvider) Stream(ctx context.Context, messages []Message, tools [
 			Message struct {
 				Role      string     `json:"role"`
 				Content   string     `json:"content"`
+				Thinking  string     `json:"thinking"`
 				ToolCalls []ToolCall `json:"tool_calls"`
 			} `json:"message"`
 			Done            bool `json:"done"`
@@ -235,6 +249,7 @@ func (p *ollamaProvider) Stream(ctx context.Context, messages []Message, tools [
 			continue
 		}
 
+		fullMessage.Reasoning += chunk.Message.Thinking
 		if chunk.Message.Content != "" {
 			fullMessage.Content += chunk.Message.Content
 			if onChunk != nil {

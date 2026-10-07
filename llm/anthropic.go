@@ -25,12 +25,19 @@ type anthropicProvider struct {
 	temperature *float64
 	cache       bool
 	schema      json.RawMessage
+	thinking    map[string]any // the thinking field, nil when not asked
+	effort      string         // output_config.effort, "" when not asked
 }
 
 func newAnthropicProvider(cfg Config) *anthropicProvider {
 	maxTokens := cfg.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = 32000
+	}
+	var thinking map[string]any
+	var effort string
+	if cfg.Thinking != nil {
+		thinking, effort = claudeThinking(cfg.Model, *cfg.Thinking, maxTokens)
 	}
 	return &anthropicProvider{
 		apiKey:      or(cfg.APIKey, os.Getenv("ANTHROPIC_API_KEY")),
@@ -42,6 +49,8 @@ func newAnthropicProvider(cfg Config) *anthropicProvider {
 		temperature: cfg.Temperature,
 		cache:       cfg.PromptCache,
 		schema:      cfg.ResponseSchema,
+		thinking:    thinking,
+		effort:      effort,
 	}
 }
 
@@ -73,13 +82,22 @@ func (p *anthropicProvider) request(messages []Message, tools []Tool) map[string
 	if len(tools) > 0 {
 		body["tools"] = p.convertTools(tools)
 	}
-	if p.temperature != nil {
+	if p.temperature != nil && p.thinking["type"] != "enabled" {
+		// A model thinking with a budget takes no temperature.
 		body["temperature"] = *p.temperature
 	}
+	if p.thinking != nil {
+		body["thinking"] = p.thinking
+	}
+	outputConfig := map[string]any{}
 	if len(p.schema) > 0 {
-		body["output_config"] = map[string]any{
-			"format": map[string]any{"type": "json_schema", "schema": p.schema},
-		}
+		outputConfig["format"] = map[string]any{"type": "json_schema", "schema": p.schema}
+	}
+	if p.effort != "" {
+		outputConfig["effort"] = p.effort
+	}
+	if len(outputConfig) > 0 {
+		body["output_config"] = outputConfig
 	}
 	return body
 }
@@ -108,15 +126,9 @@ func (u anthropicUsage) usage() *Usage {
 
 // anthropicResponse is the body of a Messages API answer.
 type anthropicResponse struct {
-	Content []struct {
-		Type  string         `json:"type"`
-		Text  string         `json:"text,omitempty"`
-		ID    string         `json:"id,omitempty"`
-		Name  string         `json:"name,omitempty"`
-		Input map[string]any `json:"input,omitempty"`
-	} `json:"content"`
-	StopReason string         `json:"stop_reason"`
-	Usage      anthropicUsage `json:"usage"`
+	Content    []json.RawMessage `json:"content"`
+	StopReason string            `json:"stop_reason"`
+	Usage      anthropicUsage    `json:"usage"`
 }
 
 func (p *anthropicProvider) Chat(ctx context.Context, messages []Message, tools []Tool) (*Message, error) {
@@ -178,6 +190,8 @@ func (p *anthropicProvider) Stream(ctx context.Context, messages []Message, tool
 	var currentToolID string
 	var currentToolName string
 	var currentToolInputBuffer string
+	// The thinking block being read, nil when the block is not one.
+	var thinking map[string]any
 
 	for {
 		// Proactive check before reading
@@ -212,12 +226,15 @@ func (p *anthropicProvider) Stream(ctx context.Context, messages []Message, tool
 				Type        string `json:"type"`
 				Text        string `json:"text"`
 				PartialJson string `json:"partial_json"`
+				Thinking    string `json:"thinking"`
+				Signature   string `json:"signature"`
 			} `json:"delta"`
 			ContentBlock struct {
 				Type string `json:"type"`
 				ID   string `json:"id"`
 				Name string `json:"name"`
 				Text string `json:"text"`
+				Data string `json:"data"`
 			} `json:"content_block"`
 			Message struct {
 				Usage anthropicUsage `json:"usage"`
@@ -231,6 +248,12 @@ func (p *anthropicProvider) Stream(ctx context.Context, messages []Message, tool
 
 		switch event.Type {
 		case "content_block_start":
+			switch event.ContentBlock.Type {
+			case "thinking":
+				thinking = map[string]any{"type": "thinking", "thinking": "", "signature": ""}
+			case "redacted_thinking":
+				thinking = map[string]any{"type": "redacted_thinking", "data": event.ContentBlock.Data}
+			}
 			if event.ContentBlock.Type == "tool_use" {
 				currentToolID = event.ContentBlock.ID
 				currentToolName = event.ContentBlock.Name
@@ -257,9 +280,19 @@ func (p *anthropicProvider) Stream(ctx context.Context, messages []Message, tool
 				}
 			} else if event.Delta.Type == "input_json_delta" {
 				currentToolInputBuffer += event.Delta.PartialJson
+			} else if event.Delta.Type == "thinking_delta" && thinking != nil {
+				thinking["thinking"] = thinking["thinking"].(string) + event.Delta.Thinking
+				fullMessage.Reasoning += event.Delta.Thinking
+			} else if event.Delta.Type == "signature_delta" && thinking != nil {
+				thinking["signature"] = thinking["signature"].(string) + event.Delta.Signature
 			}
 
 		case "content_block_stop":
+			if thinking != nil {
+				raw, _ := json.Marshal(thinking)
+				fullMessage.ThinkingBlocks = append(fullMessage.ThinkingBlocks, raw)
+				thinking = nil
+			}
 			if currentToolID != "" {
 				// End of a tool call
 				fullMessage.ToolCalls = append(fullMessage.ToolCalls, ToolCall{
@@ -300,6 +333,15 @@ func (p *anthropicProvider) normalizeMessages(messages []Message) (string, []map
 	var system string
 	var result []map[string]any
 
+	// The turn under way starts after the last user message: the answers
+	// in it, working through tools, go back with their thinking blocks.
+	turn := 0
+	for i, m := range messages {
+		if m.Role == "user" {
+			turn = i
+		}
+	}
+
 	for i := 0; i < len(messages); i++ {
 		msg := messages[i]
 
@@ -311,7 +353,7 @@ func (p *anthropicProvider) normalizeMessages(messages []Message) (string, []map
 
 		// Normal user/assistant message
 		if msg.Role != "tool" {
-			content := p.buildContent(msg)
+			content := p.buildContent(msg, i > turn)
 			result = append(result, map[string]any{
 				"role":    msg.Role,
 				"content": content,
@@ -340,8 +382,16 @@ func (p *anthropicProvider) normalizeMessages(messages []Message) (string, []map
 	return system, result
 }
 
-func (p *anthropicProvider) buildContent(msg Message) []any {
+// buildContent is the content of a user or assistant message; withThinking
+// puts an answer's thinking blocks first, as it gave them.
+func (p *anthropicProvider) buildContent(msg Message, withThinking bool) []any {
 	content := []any{}
+
+	if withThinking && msg.Role == "assistant" {
+		for _, b := range msg.ThinkingBlocks {
+			content = append(content, b)
+		}
+	}
 
 	// Text
 	if msg.Content != "" {
@@ -378,11 +428,28 @@ func (p *anthropicProvider) convertTools(tools []Tool) []map[string]any {
 	return result
 }
 
+// anthropicBlock is a content block of an answer, as much of it as is read.
+type anthropicBlock struct {
+	Type     string         `json:"type"`
+	Text     string         `json:"text,omitempty"`
+	ID       string         `json:"id,omitempty"`
+	Name     string         `json:"name,omitempty"`
+	Input    map[string]any `json:"input,omitempty"`
+	Thinking string         `json:"thinking,omitempty"`
+}
+
 func (p *anthropicProvider) convertResponse(result anthropicResponse) *Message {
 	msg := &Message{Role: "assistant"}
 
-	for _, c := range result.Content {
+	for _, raw := range result.Content {
+		var c anthropicBlock
+		if err := json.Unmarshal(raw, &c); err != nil {
+			continue
+		}
 		switch c.Type {
+		case "thinking", "redacted_thinking":
+			msg.Reasoning += c.Thinking
+			msg.ThinkingBlocks = append(msg.ThinkingBlocks, raw)
 		case "text":
 			msg.Content += c.Text
 		case "tool_use":

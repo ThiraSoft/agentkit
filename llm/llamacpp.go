@@ -24,7 +24,7 @@ func newLlamaCppProvider(cfg Config) *openaiCompatProvider {
 		BaseURL:   or(cfg.BaseURL, llamaCppBaseURL()+"/v1"),
 		Model:     cfg.Model,
 		Name:      "llamacpp",
-		ExtraBody: requestFields(cfg, "max_tokens", nil),
+		ExtraBody: templateFields(cfg, "max_tokens", nil),
 		// llama-server (mtmd) follows the OpenAI convention: input_audio block.
 		AudioFormat:   "input_audio",
 		StreamUsage:   true,

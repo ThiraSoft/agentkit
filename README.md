@@ -205,7 +205,7 @@ Not every model takes a response schema together with tools. With tools, Turn.Te
 ```
 
 The other fields are `baseURL`, `maxSteps`, `maxToolResult`, `temperature`,
-`responseSchema`, `extraBody`, `timeout`, `dropReasoning`, `tools`,
+`responseSchema`, `extraBody`, `timeout`, `dropReasoning`, `thinking`, `tools`,
 `workdir` and `system`. `${VAR}` in
 `apiKey`, `baseURL`, `workdir` and the MCP servers is replaced by the
 environment variable; an unknown field is an error.
@@ -222,7 +222,19 @@ Qwen's template renders it for the turn under way, so a model working
 through tools keeps its train of thought from one step to the next.
 `dropReasoning` sends the history back without it. Which past turns keep
 theirs is the template's business: Qwen's takes `preserve_thinking` in
-`chat_template_kwargs`. `system` is kept
+`chat_template_kwargs`.
+
+`thinking`, true or false, turns the model's reasoning on or off; absent, the
+model keeps its default. Each provider gets the knob its model takes:
+`chat_template_kwargs.enable_thinking` for `llamacpp` and `openai-compat`, as
+llama.cpp reads it; `think` for Ollama; `thinkingConfig` for Gemini 2.5 and
+after; `thinking` or `output_config.effort` for Claude 3.7 and after;
+`reasoning_effort` for OpenAI's reasoning models. A model that has no such
+knob, Mistral's among them, is left as it is, and so is one that cannot do
+what is asked: Gemini 2.5 Pro and Gemini 3 always think, and Claude Opus 5
+and after think, at the lowest effort, when told not to. What Ollama, Gemini
+and Claude think is kept in `Message.Reasoning` too, and Claude's thinking
+blocks go back with the turn under way, as its tools need. `system` is kept
 in `Config.System` for the caller; `cmd/agentkit` uses it.
 
 ## Built-in tools

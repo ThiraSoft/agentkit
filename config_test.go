@@ -79,12 +79,13 @@ func TestLoadConfigTools(t *testing.T) {
 		"system": "Be brief.",
 		"extraBody": {"top_p": 0.8},
 		"timeout": 1800,
-		"dropReasoning": true
+		"dropReasoning": true,
+		"thinking": false
 	}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(cfg.Builtins, ",") != "read_file,bash" || cfg.Workdir != "/home/someone/src/repo" || cfg.System != "Be brief." || cfg.ExtraBody["top_p"] != 0.8 || cfg.Timeout != 30*time.Minute || !cfg.DropReasoning {
+	if strings.Join(cfg.Builtins, ",") != "read_file,bash" || cfg.Workdir != "/home/someone/src/repo" || cfg.System != "Be brief." || cfg.ExtraBody["top_p"] != 0.8 || cfg.Timeout != 30*time.Minute || !cfg.DropReasoning || cfg.Thinking == nil || *cfg.Thinking {
 		t.Fatalf("%+v", cfg)
 	}
 	cfg, err = LoadConfig(writeConfig(t, `{"provider": "gemini"}`))

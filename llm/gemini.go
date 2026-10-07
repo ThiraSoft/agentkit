@@ -24,9 +24,14 @@ type geminiProvider struct {
 	temperature *float64
 	maxTokens   int
 	schema      json.RawMessage
+	thinking    map[string]any // the thinkingConfig, nil when not asked
 }
 
 func newGeminiProvider(cfg Config) *geminiProvider {
+	var thinking map[string]any
+	if cfg.Thinking != nil {
+		thinking = geminiThinking(cfg.Model, *cfg.Thinking)
+	}
 	return &geminiProvider{
 		baseURL:     or(cfg.BaseURL, "https://generativelanguage.googleapis.com/v1beta"),
 		apiKey:      or(cfg.APIKey, os.Getenv("GEMINI_API_KEY")),
@@ -35,6 +40,7 @@ func newGeminiProvider(cfg Config) *geminiProvider {
 		temperature: cfg.Temperature,
 		maxTokens:   cfg.MaxTokens,
 		schema:      cfg.ResponseSchema,
+		thinking:    thinking,
 	}
 }
 
@@ -51,6 +57,9 @@ func (p *geminiProvider) generationConfig() map[string]any {
 	if len(p.schema) > 0 {
 		gc["responseMimeType"] = "application/json"
 		gc["responseJsonSchema"] = p.schema
+	}
+	if p.thinking != nil {
+		gc["thinkingConfig"] = p.thinking
 	}
 	if len(gc) == 0 {
 		return nil
@@ -230,6 +239,8 @@ func (p *geminiProvider) Stream(ctx context.Context, messages []Message, tools [
 				fullMessage.Content += partMsg.Content
 			}
 
+			fullMessage.Reasoning += partMsg.Reasoning
+
 			if len(partMsg.ToolCalls) > 0 {
 				fullMessage.ToolCalls = append(fullMessage.ToolCalls, partMsg.ToolCalls...)
 			}
@@ -332,7 +343,13 @@ func (p *geminiProvider) convertResponse(content struct {
 
 	for _, part := range content.Parts {
 		if text, ok := part["text"].(string); ok {
-			msg.Content += text
+			// A thought summary, asked for with includeThoughts, is
+			// what the model thought, not what it answers.
+			if thought, _ := part["thought"].(bool); thought {
+				msg.Reasoning += text
+			} else {
+				msg.Content += text
+			}
 		}
 
 		if fc, ok := part["functionCall"].(map[string]any); ok {

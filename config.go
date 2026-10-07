@@ -31,6 +31,7 @@ type fileConfig struct {
 	ExtraBody      map[string]any     `json:"extraBody"`
 	Timeout        int                `json:"timeout"`
 	DropReasoning  bool               `json:"dropReasoning"`
+	Thinking       *bool              `json:"thinking"`
 }
 
 // placeholder matches the ${VAR} that LoadConfig expands.
@@ -52,6 +53,7 @@ var placeholder = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 //	  "extraBody": {"top_p": 0.8, "chat_template_kwargs": {"enable_thinking": true}},
 //	  "timeout": 1800,
 //	  "dropReasoning": false,
+//	  "thinking": true,
 //	  "mcp": [{"name": "files", "transport": "stdio", "command": "files-mcp --root /tmp"}],
 //	  "tools": ["read_file", "edit_file", "grep"],
 //	  "workdir": "~/src/project",
@@ -99,6 +101,7 @@ func LoadConfig(path string) (Config, error) {
 		ExtraBody:      f.ExtraBody,
 		Timeout:        time.Duration(f.Timeout) * time.Second,
 		DropReasoning:  f.DropReasoning,
+		Thinking:       f.Thinking,
 	}, nil
 }
 
