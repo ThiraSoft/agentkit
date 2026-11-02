@@ -91,3 +91,15 @@ for ln in lines:
     y += 28
 save("linkedin-cover.svg", svg(W, H, body, "agentkit"))
 print("ok")
+
+# 5. thumbnail for LinkedIn "Featured" and link previews, 1200x627 (1.91:1)
+W, H = 1200, 627
+t = f'<rect width="{W}" height="{H}" fill="{INK}"/>'
+t += f'<g opacity="0.06">{mark(820, 300, 520, "bg", WHITE)}</g>'
+t += mark(200, 178, 230, "m")
+wm, _ = wordmark(460, 300, 112, WHITE)
+t += wm
+t += text("Build LLM agents in Go.", 466, 372, 34, "Medium", "#C9D6DC")[0]
+t += text("tools · MCP · streaming", 466, 424, 24, "Regular", CYAN)[0]
+save("thumbnail.svg", svg(W, H, t, "agentkit: build LLM agents in Go"))
+print("thumbnail ok")
