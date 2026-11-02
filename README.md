@@ -1,4 +1,6 @@
-# agentkit
+<p align="center">
+  <img src="docs/logo/banner.svg" alt="agentkit: build LLM agents in Go" width="760">
+</p>
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/ThiraSoft/agentkit.svg)](https://pkg.go.dev/github.com/ThiraSoft/agentkit)
 [![test](https://github.com/ThiraSoft/agentkit/actions/workflows/test.yml/badge.svg)](https://github.com/ThiraSoft/agentkit/actions/workflows/test.yml)
